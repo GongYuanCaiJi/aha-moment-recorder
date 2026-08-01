@@ -2,7 +2,7 @@
 
 ## 結論
 
-已在隔離測試 Vault 完成 Obsidian 的真實接入驗證：Obsidian Copilot 3.3.3 能透過與 ChatGPT/Codex 相同的本機反代與憑證來源，呼叫 `gpt-5.6-sol`，並在 Obsidian 介面收到預期回覆。
+已在隔離測試 Vault 完成 Obsidian 的真實接入驗證：Obsidian Copilot 3.3.3 能透過與 ChatGPT/Codex 相同的本機反代與憑證來源，呼叫 `gpt-5.6-luna`，並在 Obsidian 介面收到預期回覆。後續分類測試使用 Luna、`reasoning_effort=medium`。
 
 這次沒有修改 ChatGPT/Codex 的任何設定，也沒有重啟 ChatGPT。測試只使用副螢幕上的隔離 Vault，不觸碰正式筆記。
 
@@ -13,7 +13,7 @@ Obsidian Copilot
   -> http://127.0.0.1:8317/v1
   -> cli-proxy-wrap (wrap.py)
   -> http://127.0.0.1:8316
-  -> cli-proxy-api / gpt-5.6-sol
+  -> cli-proxy-api / gpt-5.6-luna
 ```
 
 ChatGPT/Codex 的現行程序環境同時可見：
@@ -32,7 +32,8 @@ ChatGPT/Codex 的現行程序環境同時可見：
 設定檔：`<vault>/.obsidian/plugins/copilot/data.json`
 
 - 外掛：Copilot `3.3.3`
-- model：`gpt-5.6-sol`
+- model：`gpt-5.6-luna`
+- reasoning：`medium`
 - base URL：`http://127.0.0.1:8317/v1`
 - API key：同一份 `cli-proxy-api/config.yaml` 的第一個 key（只在本機設定，不寫入本 repo）
 - `stream=false`、`enableCors=true`
@@ -55,17 +56,24 @@ Copilot 會對名稱以 `gpt-5` 開頭、且 provider 是 `openai` 或 `3rd part
 | 同一輪 | `/tmp/launchd-cli-proxy-wrap.log` | `POST /v1/chat/completions` `200 OK` |
 | 00:58:09 | 同一 endpoint、同一 key 的獨立 non-stream probe | HTTP `200`、model `gpt-5.6-sol`、回覆 `DIRECT_PROXY_OK` |
 | 全程 | Obsidian 測試視窗 bounds `x=3328,y=256,size=1024x800`；主螢幕為 `2560x1440` | 測試視窗位於副螢幕；未操作主螢幕 |
+| 2026-08-02 03:55–04:00 | 背景 `record_bridge.py` 將合成音訊、原始文字、逐字稿寫入同一筆 Vault record，經 `127.0.0.1:8317/v1` 呼叫 `gpt-5.6-luna` | `record.md` 保留三種原始來源，並產生分類、主題、結構化輸出、摘要；Git branch `record-bridge/live` 產生新 commit |
 
 ## Research ledger
 
 | question | claim | source | gap | action |
 |---|---|---|---|---|
 | ChatGPT/Codex 怎麼接入？ | 目前程序以 `OPENAI_TARGET_API_URL=127.0.0.1:8317/v1` 指向 `wrap.py`，key 由 `cli-proxy-api/config.yaml` 提供 | live process env、LaunchAgent、`wrap.py`、socket probe | `8788` 當下未監聽 | Obsidian 使用 live target `8317`；不修改 ChatGPT |
-| Obsidian 能否使用同一反代？ | Copilot 支援自訂 OpenAI-compatible base URL、model 與 key | Copilot 官方 README/RELEASES | 正式 Vault 尚未指定 | 先在隔離 Vault 完成 E2E，正式 Vault 另行指定後才套用 |
+| Obsidian 能否使用同一反代？ | Copilot 支援自訂 OpenAI-compatible base URL、model 與 key；Luna/medium 已由隔離 UI 測試與背景 bridge 請求確認 | Copilot 官方 README/RELEASES、fresh bridge log | 正式既有 Vault 尚未指定 | 使用專用 `/Users/shuaige/Documents/Aha Moment Vault`，不碰既有 `blackbox-bug-finder` Vault |
 | 真實 client 是否成功？ | Obsidian UI 收到 marker，proxy log 同輪回 `200` | Computer Use AX state + wrap log | 目前只用合成測試文字 | 不把測試資料當正式內容；正式資料需另訂測試範圍 |
 | 為何不走 Responses API？ | 目前 upstream 對 `/v1/responses` 回 502；Chat Completions 可用 | fresh proxy log + plugin behavior | upstream 是否未來支援 Responses 尚未確認 | 以 custom provider label 固定走 Chat Completions；日後可再研究原生 Responses |
+
+## 背景橋接器（2026-08-02）
+
+`prototype/record-bridge/record_bridge.py` 已接上兩個本機來源：Voice Memos 的 iCloud 同步 `Recordings` 目錄，以及 iPhone Files／Shortcuts 可寫入的 `AhaMomentInbox`。它把每筆來源、音訊附件和逐字稿寫入同一個 `records/<record-id>/record.md`；同名 `.transcript.txt` 出現後會在下一輪掃描補進原記錄。`com.aha-moment-recorder.bridge.plist` 以 user LaunchAgent 在背景每 15 秒掃描，不開啟或移動任何視窗。
+
+已直接驗證：背景程序常駐、真實反代請求成功、原始音訊／文字／逐字稿保持不變、AI 四欄只出現一次、逐字稿更新會在同一個 Git record 產生下一個 commit，工作樹保持乾淨。
 
 ## 邊界與下一步
 
 - 本次只改了隔離測試 Vault 的 Copilot 設定；沒有改 `/Users/shuaige/cli-proxy-wrap`、`/Users/shuaige/cli-proxy-api`、Headroom、ChatGPT/Codex 或正式 Obsidian Vault。
-- 若要套用到正式 Vault，還需要先指定要使用哪個 Vault；在此之前不會把 key 或外掛設定寫入正式筆記環境。
+- 專用 Vault 已建立並接上背景 bridge；既有 `blackbox-bug-finder` Vault 沒有被修改。Voice Memos 的 `.m4a` 可自動同步，但 Apple 沒有把 transcript 當成穩定 sidecar 暴露；沒有逐字稿時系統會先保留音訊並標記待補，不會偽造逐字稿。
