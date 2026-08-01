@@ -69,7 +69,7 @@ Copilot 會對名稱以 `gpt-5` 開頭、且 provider 是 `openai` 或 `3rd part
 
 ## 背景橋接器（2026-08-02）
 
-`prototype/record-bridge/record_bridge.py` 已接上兩個本機來源：Voice Memos 的 iCloud 同步 `Recordings` 目錄，以及 iPhone Files／Shortcuts 可寫入的 `AhaMomentInbox`。它把每筆來源、音訊附件和逐字稿寫入同一個 `records/<record-id>/record.md`；同名 `.transcript.txt` 出現後會在下一輪掃描補進原記錄。`com.aha-moment-recorder.bridge.plist` 以 user LaunchAgent 在背景每 15 秒掃描，不開啟或移動任何視窗。
+`prototype/record-bridge/record_bridge.py` 已接上兩個本機來源：Voice Memos 的 iCloud 同步 `Recordings` 目錄，以及 iPhone Files／Shortcuts 可寫入的 `AhaMomentInbox`。它把每筆來源、音訊附件和逐字稿寫入同一個 `records/<record-id>/record.md`；同名 `.transcript.txt` 出現後會在下一輪掃描補進原記錄。每筆 frontmatter 的 `processing_mode` 可以個別切換 `capture-only`／`collect-and-organize`。`com.aha-moment-recorder.bridge.plist` 以 user LaunchAgent 在背景每 15 秒掃描，不開啟或移動任何視窗。
 
 已直接驗證：背景程序常駐、真實反代請求成功、原始音訊／文字／逐字稿保持不變、AI 四欄只出現一次、逐字稿更新會在同一個 Git record 產生下一個 commit，工作樹保持乾淨。
 
