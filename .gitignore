@@ -1,3 +1,32 @@
+# Python caches and local build output
 __pycache__/
 *.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+settings.toml
+*.local.toml
+*.secret.toml
+*.key
+*.pem
+*.token
+
+# Runtime state, records, and logs (never commit personal data)
+.bridge/
+**/.bridge/
+records/
+**/records/
+runtime/
+logs/
+*.log
+*.state.json
+
+# Local agent/editor metadata
+.serena/
 .DS_Store

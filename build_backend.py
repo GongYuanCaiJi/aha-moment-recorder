@@ -21,6 +21,7 @@ def _metadata() -> str:
             f"Name: {NAME}",
             f"Version: {VERSION}",
             "Summary: Portable standard-library core pipeline for personal records",
+            "License: MIT",
             "Requires-Python: >=3.11",
             "",
         ]
@@ -75,6 +76,10 @@ def build_wheel(wheel_directory: str, config_settings=None, metadata_directory=N
     source_root = Path(__file__).resolve().parent
     for path in sorted((source_root / "aha_moment_recorder").rglob("*.py")):
         files[path.relative_to(source_root).as_posix()] = path.read_bytes()
+    for name in ("LICENSE", "README.md"):
+        path = source_root / name
+        if path.is_file():
+            files[name] = path.read_bytes()
     files.update(_dist_files())
     record_name = f"{DIST_INFO}/RECORD"
     record = "\n".join(_record_line(name, content) for name, content in sorted(files.items()))

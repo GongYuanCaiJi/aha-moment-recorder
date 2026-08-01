@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import argparse
 import json
-import plistlib
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
-from .config import CAPTURE_ONLY, COLLECT_AND_ORGANIZE, ConfigError, Settings, load_settings
+from .config import (
+    CAPTURE_ONLY,
+    COLLECT_AND_ORGANIZE,
+    ConfigError,
+    Settings,
+    load_settings,
+    write_config,
+)
+from .launchagent import LaunchAgentError, LaunchAgentManager
 from .pipeline import pipeline_from_settings
 
 
@@ -38,6 +46,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interval", type=float, default=15.0)
     parser.add_argument("--after", help="only process source files modified at/after this ISO-8601 time")
     parser.add_argument("--agent-path", type=Path, default=DEFAULT_AGENT_PATH)
+    parser.add_argument("--stdout-path", type=Path)
+    parser.add_argument("--stderr-path", type=Path)
+    parser.add_argument("--force", action="store_true", default=False)
     return parser
 
 
@@ -48,6 +59,9 @@ def _cli_values(args: argparse.Namespace) -> dict[str, Any]:
     values.pop("interval", None)
     values.pop("after", None)
     values.pop("agent_path", None)
+    values.pop("stdout_path", None)
+    values.pop("stderr_path", None)
+    values.pop("force", None)
     return {key: value for key, value in values.items() if value is not None}
 
 
@@ -60,9 +74,19 @@ def _after_epoch(value: str | None) -> float | None:
         raise ConfigError(f"invalid --after timestamp: {exc}") from exc
 
 
-def _doctor(settings: Settings) -> int:
+def _doctor(
+    settings: Settings,
+    *,
+    agent_path: Path = DEFAULT_AGENT_PATH,
+    launchctl_runner: Any | None = None,
+    platform: str | None = None,
+) -> int:
     source_checks = [
-        {"path": str(path), "exists": path.is_dir(), "readable": path.is_dir() and path.exists()}
+        {
+            "path": str(path),
+            "exists": path.is_dir(),
+            "readable": path.is_dir() and os.access(path, os.R_OK),
+        }
         for path in settings.sources
     ]
     checks = {
@@ -72,66 +96,188 @@ def _doctor(settings: Settings) -> int:
         "endpoint": settings.endpoint,
         "api_key": "configured" if settings.api_key else "not configured",
     }
+    actual_platform = sys.platform if platform is None else platform
+    if actual_platform == "darwin":
+        agent = {"configured": agent_path.is_file(), "plist_path": str(agent_path)}
+        if agent_path.is_file():
+            status = LaunchAgentManager(
+                agent_path,
+                runner=launchctl_runner,
+                platform=actual_platform,
+            ).status()
+            agent.update(status.as_dict())
+            agent["stdout_exists"] = bool(status.stdout_path and status.stdout_path.exists())
+            agent["stderr_exists"] = bool(status.stderr_path and status.stderr_path.exists())
+        checks["launch_agent"] = agent
     print(json.dumps(checks, ensure_ascii=False, indent=2))
-    return 0 if checks["vault"]["exists"] and all(item["exists"] for item in source_checks) else 1
+    healthy = checks["vault"]["exists"] and all(item["exists"] for item in source_checks)
+    agent = checks.get("launch_agent")
+    if isinstance(agent, dict) and agent.get("configured"):
+        healthy = (
+            healthy
+            and bool(agent.get("loaded"))
+            and agent.get("last_exit_success") is not False
+            and not agent.get("detail")
+        )
+    return 0 if healthy else 1
 
 
-def _init(settings: Settings) -> int:
+def _init(settings: Settings, *, config_path: Path | None = None, force: bool = False) -> int:
+    config_target = config_path.expanduser().resolve() if config_path else None
+    if config_target is not None and (force or not config_target.exists()):
+        write_config(config_target, settings, overwrite=force)
     settings.vault.mkdir(parents=True, exist_ok=True)
     (settings.vault / "records").mkdir(exist_ok=True)
+    for source in settings.sources:
+        source.mkdir(parents=True, exist_ok=True)
     settings.state_path.parent.mkdir(parents=True, exist_ok=True)
     if not settings.state_path.exists():
         from .state import StateStore
 
         StateStore(settings.state_path).save()
-    print(json.dumps({"status": "initialized", "vault": str(settings.vault)}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "status": "initialized",
+                "config": str(config_target) if config_target else None,
+                "vault": str(settings.vault),
+                "sources": [str(path) for path in settings.sources],
+                "state": str(settings.state_path),
+            },
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 
-def _install_agent(settings: Settings, path: Path) -> int:
-    if sys.platform != "darwin":
-        print("install-agent requires macOS", file=sys.stderr)
-        return 1
+def _agent_command(settings: Settings) -> list[str]:
     command = [sys.executable, "-m", "aha_moment_recorder", "watch"]
     if settings.config_path:
         command.extend(["--config", str(settings.config_path)])
     else:
-        command.extend(["--vault", str(settings.vault), "--endpoint", settings.endpoint, "--model", settings.model])
+        command.extend(
+            [
+                "--vault",
+                str(settings.vault),
+                "--state",
+                str(settings.state_path),
+                "--endpoint",
+                settings.endpoint,
+                "--model",
+                settings.model,
+                "--mode",
+                settings.mode,
+                "--reasoning-effort",
+                settings.reasoning_effort,
+                "--timeout",
+                str(settings.timeout),
+            ]
+        )
         for source in settings.sources:
             command.extend(["--source", str(source)])
+        if settings.api_key_file:
+            command.extend(["--api-key-file", str(settings.api_key_file)])
+        if not settings.auto_commit:
+            command.append("--no-git-commit")
+        if settings.retry_ai:
+            command.append("--retry-ai")
+        if settings.dry_run:
+            command.append("--dry-run")
+    return command
+
+
+def _install_agent(
+    settings: Settings,
+    path: Path,
+    *,
+    stdout_path: Path | None = None,
+    stderr_path: Path | None = None,
+    launchctl_runner: Any | None = None,
+    platform: str | None = None,
+) -> int:
+    actual_platform = sys.platform if platform is None else platform
+    if actual_platform != "darwin":
+        print("install-agent requires macOS", file=sys.stderr)
+        return 1
+    stdout_target = stdout_path or settings.vault / ".bridge/launchagent.stdout.log"
+    stderr_target = stderr_path or settings.vault / ".bridge/launchagent.stderr.log"
+    manager = LaunchAgentManager(
+        path,
+        runner=launchctl_runner,
+        platform=actual_platform,
+    )
+    status = manager.install(
+        _agent_command(settings),
+        working_directory=settings.vault,
+        stdout_path=stdout_target,
+        stderr_path=stderr_target,
+    )
     payload = {
-        "Label": "com.aha-moment-recorder",
-        "ProgramArguments": command,
-        "RunAtLoad": True,
-        "KeepAlive": True,
-        "StandardOutPath": "/tmp/aha-moment-recorder.log",
-        "StandardErrorPath": "/tmp/aha-moment-recorder.error.log",
+        "status": "installed",
+        "path": str(path.expanduser().resolve()),
+        "stdout_path": str(stdout_target.expanduser().resolve()),
+        "stderr_path": str(stderr_target.expanduser().resolve()),
+        "launch_agent": status.as_dict(),
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=True))
-    print(json.dumps({"status": "installed", "path": str(path)}, ensure_ascii=False))
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if status.loaded and status.last_exit_success is not False else 1
+
+
+def _uninstall_agent(
+    path: Path,
+    *,
+    launchctl_runner: Any | None = None,
+    platform: str | None = None,
+) -> int:
+    manager = LaunchAgentManager(
+        path,
+        runner=launchctl_runner,
+        platform=sys.platform if platform is None else platform,
+    )
+    print(json.dumps(manager.uninstall(), ensure_ascii=False))
     return 0
 
 
-def _uninstall_agent(path: Path) -> int:
-    if path.exists():
-        path.unlink()
-    print(json.dumps({"status": "uninstalled", "path": str(path)}, ensure_ascii=False))
-    return 0
+def _load_settings_for_command(args: argparse.Namespace, values: dict[str, Any]) -> Settings:
+    if args.command == "init" and args.config is not None and not args.config.expanduser().exists():
+        values = values.copy()
+        values.pop("config", None)
+    return load_settings(cli=values)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    launchctl_runner: Any | None = None,
+    platform: str | None = None,
+) -> int:
     args = build_parser().parse_args(argv)
     try:
-        settings = load_settings(cli=_cli_values(args))
+        settings = _load_settings_for_command(args, _cli_values(args))
         if args.command == "init":
-            return _init(settings)
+            return _init(settings, config_path=args.config, force=args.force)
         if args.command == "doctor":
-            return _doctor(settings)
+            return _doctor(
+                settings,
+                agent_path=args.agent_path,
+                launchctl_runner=launchctl_runner,
+                platform=platform,
+            )
         if args.command == "install-agent":
-            return _install_agent(settings, args.agent_path)
+            return _install_agent(
+                settings,
+                args.agent_path,
+                stdout_path=args.stdout_path,
+                stderr_path=args.stderr_path,
+                launchctl_runner=launchctl_runner,
+                platform=platform,
+            )
         if args.command == "uninstall-agent":
-            return _uninstall_agent(args.agent_path)
+            return _uninstall_agent(
+                args.agent_path,
+                launchctl_runner=launchctl_runner,
+                platform=platform,
+            )
         pipeline = pipeline_from_settings(settings)
         after_epoch = _after_epoch(args.after)
         if after_epoch is not None:
@@ -145,3 +291,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
+    except LaunchAgentError as exc:
+        print(f"launch agent error: {exc}", file=sys.stderr)
+        return 1

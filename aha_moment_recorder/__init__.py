@@ -2,6 +2,7 @@
 
 from .config import ConfigError, Settings, load_settings
 from .git_adapter import GitCommitError, GitCommitter
+from .launchagent import LaunchAgentError, LaunchAgentManager, LaunchAgentStatus
 from .organization import (
     FOUR_FIELDS,
     Organization,
@@ -19,6 +20,9 @@ __all__ = [
     "FOUR_FIELDS",
     "GitCommitError",
     "GitCommitter",
+    "LaunchAgentError",
+    "LaunchAgentManager",
+    "LaunchAgentStatus",
     "Organization",
     "OrganizationError",
     "OpenAICompatibleOrganizer",

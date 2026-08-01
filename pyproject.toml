@@ -7,6 +7,8 @@ backend-path = ["."]
 name = "aha-moment-recorder"
 version = "0.1.0"
 description = "Portable standard-library core pipeline for personal records"
+readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.11"
 dependencies = []
 

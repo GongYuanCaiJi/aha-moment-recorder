@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -303,6 +304,51 @@ def load_settings(
         api_key_file=api_key_file,
         config_path=config_file,
     )
+
+
+def write_config(path: Path | str, settings: Settings, *, overwrite: bool = False) -> Path:
+    """Write a secret-free TOML configuration for an initialized workspace."""
+
+    target = Path(path).expanduser().resolve()
+    if target.exists() and not overwrite:
+        raise ConfigError(f"config file already exists: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    def quote(value: object) -> str:
+        return json.dumps(str(value), ensure_ascii=False)
+
+    lines = [
+        "# Aha Moment Recorder configuration. Do not put API keys in this file.",
+        "[aha_moment_recorder]",
+        f"vault = {quote(settings.vault)}",
+        "sources = [",
+        *[f"  {quote(source)}," for source in settings.sources],
+        "]",
+        f"state = {quote(settings.state_path)}",
+        f"endpoint = {quote(settings.endpoint)}",
+        f"model = {quote(settings.model)}",
+        f"mode = {quote(settings.mode)}",
+        f"reasoning_effort = {quote(settings.reasoning_effort)}",
+        f"timeout = {settings.timeout:g}",
+        f"auto_commit = {str(settings.auto_commit).lower()}",
+        f"retry_ai = {str(settings.retry_ai).lower()}",
+        f"dry_run = {str(settings.dry_run).lower()}",
+    ]
+    if settings.api_key_file is not None:
+        lines.append(f"api_key_file = {quote(settings.api_key_file)}")
+    lines.extend(
+        [
+            "",
+            "# Authentication is read from AHA_API_KEY or api_key_file.",
+            "",
+        ]
+    )
+    target.write_text("\n".join(lines), encoding="utf-8")
+    try:
+        target.chmod(0o600)
+    except OSError:
+        pass
+    return target
 
 
 def environment_without_secrets() -> dict[str, str]:
