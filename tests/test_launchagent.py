@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from aha_moment_recorder.launchagent import LaunchAgentManager
+from aha_moment_recorder.launchagent import LaunchAgentError, LaunchAgentManager, build_launch_agent_plist, render_launch_agent_plist
 
 
 class FakeLaunchctl:
@@ -122,6 +122,27 @@ class LaunchAgentTests(unittest.TestCase):
                 runner.calls,
                 [["launchctl", "bootout", "gui/501", str(path.resolve())]],
             )
+
+    def test_uninstall_refuses_a_plist_with_another_label(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / "foreign.plist"
+            path.write_bytes(
+                render_launch_agent_plist(
+                    build_launch_agent_plist(
+                        label="com.example.foreign",
+                        program_arguments=["/usr/bin/true"],
+                        working_directory=root,
+                        stdout_path=root / "stdout.log",
+                        stderr_path=root / "stderr.log",
+                    )
+                )
+            )
+            runner = FakeLaunchctl()
+            with self.assertRaises(LaunchAgentError):
+                LaunchAgentManager(path, uid=501, runner=runner, platform="darwin").uninstall()
+            self.assertTrue(path.exists())
+            self.assertEqual(runner.calls, [])
 
 
 if __name__ == "__main__":

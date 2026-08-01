@@ -214,6 +214,21 @@ class LaunchAgentManager:
             None,
         )
 
+    def _assert_owned_plist(self) -> None:
+        """Refuse to overwrite or remove a plist owned by another label."""
+
+        if not self.plist_path.is_file():
+            return
+        try:
+            payload = plistlib.loads(self.plist_path.read_bytes())
+        except (OSError, plistlib.InvalidFileException) as exc:
+            raise LaunchAgentError(f"cannot manage invalid LaunchAgent plist: {self.plist_path}") from exc
+        if not isinstance(payload, Mapping) or payload.get("Label") != self.label:
+            actual = payload.get("Label") if isinstance(payload, Mapping) else None
+            raise LaunchAgentError(
+                f"LaunchAgent plist label mismatch: expected {self.label}, got {actual}"
+            )
+
     def status(self) -> LaunchAgentStatus:
         self._require_macos()
         result = self._run(["launchctl", "print", self.target])
@@ -255,6 +270,7 @@ class LaunchAgentManager:
         stderr_path: Path,
     ) -> LaunchAgentStatus:
         self._require_macos()
+        self._assert_owned_plist()
         payload = build_launch_agent_plist(
             label=self.label,
             program_arguments=program_arguments,
@@ -288,6 +304,7 @@ class LaunchAgentManager:
 
     def uninstall(self) -> dict[str, str]:
         self._require_macos()
+        self._assert_owned_plist()
         bootout = self._run(["launchctl", "bootout", self.domain, str(self.plist_path)])
         if bootout.returncode != 0 and not self._is_absent(bootout):
             self._check_success(bootout, "launchctl bootout")
