@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
-from .config import ConfigError, Settings, load_settings
+from .config import CAPTURE_ONLY, COLLECT_AND_ORGANIZE, ConfigError, Settings, load_settings
 from .pipeline import pipeline_from_settings
 
 
@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--state", type=Path, dest="state_path")
     parser.add_argument("--endpoint", "--proxy-url", dest="endpoint")
     parser.add_argument("--model")
-    parser.add_argument("--mode", choices=["capture-only", "collect-and-organize"])
+    parser.add_argument("--mode", choices=[CAPTURE_ONLY, COLLECT_AND_ORGANIZE])
     parser.add_argument("--api-key-file", type=Path)
     parser.add_argument("--reasoning-effort", dest="reasoning_effort")
     parser.add_argument("--timeout", type=float)

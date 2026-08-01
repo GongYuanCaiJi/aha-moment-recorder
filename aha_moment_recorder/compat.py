@@ -6,7 +6,13 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .config import DEFAULT_ENDPOINT, DEFAULT_MODEL
+from .config import (
+    CAPTURE_ONLY,
+    COLLECT_AND_ORGANIZE,
+    DEFAULT_ENDPOINT,
+    DEFAULT_MODEL,
+    ProcessingMode,
+)
 from .git_adapter import GitCommitter
 from .organization import OpenAICompatibleOrganizer, parse_organization
 from .pipeline import RecordPipeline
@@ -49,7 +55,7 @@ class Bridge:
         state_path: Path | None = None,
         proxy_url: str = DEFAULT_PROXY_URL,
         model: str = DEFAULT_MODEL,
-        mode: str = "collect-and-organize",
+        mode: ProcessingMode = COLLECT_AND_ORGANIZE,
         auto_commit: bool = True,
         retry_ai: bool = False,
         dry_run: bool = False,

@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
-from .config import Settings
+from .config import CAPTURE_ONLY, COLLECT_AND_ORGANIZE, Settings, VALID_MODES, ProcessingMode
 from .git_adapter import GitCommitError, GitCommitter, CommandRunner
 from .organization import Organization, OrganizationError, OpenAICompatibleOrganizer, parse_organization
 from .sources import MetadataReader, RecordGroup, SourceScanner, source_signature
@@ -29,7 +29,7 @@ class RecordPipeline:
         state: StateStore,
         *,
         committer: GitCommitter | None = None,
-        mode: str = "collect-and-organize",
+        mode: ProcessingMode = COLLECT_AND_ORGANIZE,
         auto_commit: bool = True,
         retry_ai: bool = False,
         dry_run: bool = False,
@@ -50,7 +50,7 @@ class RecordPipeline:
         record_path = self.store.record_path(group)
         existing = self.store.read(group)
         existing_mode = extract_frontmatter(existing or "").get("processing_mode")
-        effective_mode = existing_mode if existing_mode in {"capture-only", "collect-and-organize"} else self.mode
+        effective_mode = existing_mode if existing_mode in VALID_MODES else self.mode
 
         if (
             previous
@@ -100,11 +100,11 @@ class RecordPipeline:
         if not self.dry_run:
             self.store.copy_sources(group)
         raw_text, transcript = self.store.raw_content(group)
-        ai_status = "skipped" if effective_mode == "capture-only" else "pending"
+        ai_status = "skipped" if effective_mode == CAPTURE_ONLY else "pending"
         ai_error: str | None = None
         organization: Organization | None = None
 
-        if effective_mode != "capture-only" and (raw_text or transcript):
+        if effective_mode != CAPTURE_ONLY and (raw_text or transcript):
             if not self.dry_run:
                 if self.organizer is None:
                     ai_status = "error"
@@ -118,7 +118,7 @@ class RecordPipeline:
                     except (OrganizationError, OSError, RuntimeError, ValueError) as exc:
                         ai_status = "error"
                         ai_error = str(exc)[:160]
-        elif effective_mode != "capture-only":
+        elif effective_mode != CAPTURE_ONLY:
             ai_error = "transcript pending"
 
         if not self.dry_run:

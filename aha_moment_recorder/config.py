@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 try:
     import tomllib
@@ -15,8 +15,11 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility diag
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:8317/v1"
 DEFAULT_MODEL = "gpt-5.6-luna"
-DEFAULT_MODE = "collect-and-organize"
-VALID_MODES = frozenset({"capture-only", "collect-and-organize"})
+CAPTURE_ONLY = "capture-only"
+COLLECT_AND_ORGANIZE = "collect-and-organize"
+ProcessingMode = Literal["capture-only", "collect-and-organize"]
+DEFAULT_MODE: ProcessingMode = COLLECT_AND_ORGANIZE
+VALID_MODES = frozenset({CAPTURE_ONLY, COLLECT_AND_ORGANIZE})
 CONFIG_ENV = "AHA_MOMENT_RECORDER_CONFIG"
 
 

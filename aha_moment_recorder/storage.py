@@ -12,16 +12,12 @@ import re
 import shutil
 import tempfile
 from collections.abc import Callable
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .organization import Organization, parse_organization
 from .sources import RecordGroup, sha256_file
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+from .state import utc_now
 
 
 def yaml_value(value: str | int | float | bool | None) -> str:
