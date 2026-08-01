@@ -28,6 +28,19 @@ jobs:
           python -m pip install --no-deps .
           python -m aha_moment_recorder --help
 
+      - name: CLI init doctor run smoke
+        run: |
+          fixture_dir=$(mktemp -d)
+          mkdir -p "$fixture_dir/inbox"
+          printf '%s\n' 'CI capture-only fixture' > "$fixture_dir/inbox/fixture.md"
+          aha-moment-recorder init \
+            --config "$fixture_dir/settings.toml" \
+            --vault "$fixture_dir/vault" \
+            --source "$fixture_dir/inbox" \
+            --mode capture-only
+          aha-moment-recorder doctor --config "$fixture_dir/settings.toml"
+          aha-moment-recorder run --config "$fixture_dir/settings.toml" --no-git-commit
+
       - name: Unit and contract tests
         run: python -m unittest discover -s tests -v
 

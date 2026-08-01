@@ -137,6 +137,8 @@ class CliTests(unittest.TestCase):
                 encoding="utf-8",
             )
             agent_path = root / "LaunchAgents/com.aha-moment-recorder.plist"
+            key_file = root / "api-key"
+            key_file.write_text("fixture-secret\n", encoding="utf-8")
             runner = FakeLaunchctl()
             output = io.StringIO()
 
@@ -146,6 +148,8 @@ class CliTests(unittest.TestCase):
                         "install-agent",
                         "--config",
                         str(config),
+                        "--api-key-file",
+                        str(key_file),
                         "--agent-path",
                         str(agent_path),
                     ],
@@ -162,7 +166,10 @@ class CliTests(unittest.TestCase):
                 str((vault / ".bridge/launchagent.stdout.log").resolve()),
             )
             plist = plistlib.loads(agent_path.read_bytes())
-            self.assertEqual(plist["ProgramArguments"][-2:], ["--config", str(config.resolve())])
+            self.assertEqual(
+                plist["ProgramArguments"][-4:],
+                ["--config", str(config.resolve()), "--api-key-file", str(key_file.resolve())],
+            )
             self.assertIn(
                 ["launchctl", "bootstrap", f"gui/{os.getuid()}", str(agent_path.resolve())],
                 runner.calls,

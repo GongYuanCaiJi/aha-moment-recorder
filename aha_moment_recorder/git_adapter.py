@@ -107,5 +107,12 @@ class GitCommitter:
         )
         if commit_result.returncode != 0:
             raise GitCommitError("git commit failed")
-        output = commit_result.stdout.strip()
-        return output.splitlines()[-1] if output else "committed"
+        revision_result = self._run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if revision_result.returncode == 0 and revision_result.stdout.strip():
+            return revision_result.stdout.strip().splitlines()[-1]
+        return "committed"

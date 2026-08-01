@@ -2,7 +2,7 @@
 
 這是一套 macOS-first、local-first 的個人記錄 CLI：把文字、錄音、逐字稿與附件收錄到同一個 Vault 記錄，再選擇只收錄或交給你指定的 OpenAI-compatible endpoint 做通用整理。來源內容不會被 AI 結果覆寫。
 
-它不是 iPhone App、Obsidian plugin 或雲端同步服務；macOS LaunchAgent 只是可選的背景執行 adapter。
+這個 repo 提供可攜的記錄管線；macOS LaunchAgent 只是可選的背景執行 adapter。
 
 ## 需要什麼
 
@@ -65,7 +65,7 @@ api_key_file = "/Users/you/.config/aha-moment-recorder/api-key"
 export AHA_API_KEY='在目前 shell 內設定，不要提交或貼到 log'
 ```
 
-對背景 LaunchAgent 建議使用只允許本人讀取的 key file：
+對背景 LaunchAgent 請使用只允許本人讀取的 key file。LaunchAgent 不會可靠地繼承你目前 shell 的 `AHA_API_KEY`，而 plist 也不會嵌入秘密：
 
 ```sh
 mkdir -p "$HOME/.config/aha-moment-recorder"

@@ -85,6 +85,8 @@ class RecordingGitRunner:
             return subprocess.CompletedProcess(args, 0, stdout="A  records/note-fixture/record.md\n", stderr="")
         if "commit" in args:
             return subprocess.CompletedProcess(args, 0, stdout="[main abc123] record\n", stderr="")
+        if args[-2:] == ["rev-parse", "HEAD"]:
+            return subprocess.CompletedProcess(args, 0, stdout="abc123\n", stderr="")
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
 
@@ -309,6 +311,7 @@ mode = "capture-only"
                 commit_call[commit_call.index("--") + 1 :],
                 ["records/note-fixture", ".bridge/state.json"],
             )
+            self.assertEqual(commit, "abc123")
 
 
 if __name__ == "__main__":

@@ -116,6 +116,7 @@ def _doctor(
         healthy = (
             healthy
             and bool(agent.get("loaded"))
+            and bool(agent.get("running"))
             and agent.get("last_exit_success") is not False
             and not agent.get("detail")
         )
@@ -154,6 +155,10 @@ def _agent_command(settings: Settings) -> list[str]:
     command = [sys.executable, "-m", "aha_moment_recorder", "watch"]
     if settings.config_path:
         command.extend(["--config", str(settings.config_path)])
+        # A CLI override must survive the hand-off to launchd; shell
+        # environment variables are not reliably inherited by LaunchAgents.
+        if settings.api_key_file:
+            command.extend(["--api-key-file", str(settings.api_key_file)])
     else:
         command.extend(
             [
