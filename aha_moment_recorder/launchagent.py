@@ -8,6 +8,7 @@ import plistlib
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -300,7 +301,13 @@ class LaunchAgentManager:
         self._check_success(bootstrap, "launchctl bootstrap")
         kickstart = self._run(["launchctl", "kickstart", "-k", self.target])
         self._check_success(kickstart, "launchctl kickstart")
-        return self.status()
+        status = self.status()
+        for _ in range(10):
+            if status.running is True or status.last_exit is not None:
+                break
+            time.sleep(0.1)
+            status = self.status()
+        return status
 
     def uninstall(self) -> dict[str, str]:
         self._require_macos()

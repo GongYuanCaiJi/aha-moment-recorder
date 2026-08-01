@@ -225,7 +225,7 @@ def _install_agent(
         "launch_agent": status.as_dict(),
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
-    return 0 if status.loaded and status.last_exit_success is not False else 1
+    return 0 if status.loaded and status.running is True and status.last_exit_success is not False else 1
 
 
 def _uninstall_agent(
