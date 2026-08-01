@@ -1,0 +1,223 @@
+"""Public record processing pipeline and dependency assembly."""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Callable, Mapping
+from typing import Any, Protocol
+
+from .config import Settings
+from .git_adapter import GitCommitError, GitCommitter, CommandRunner
+from .organization import Organization, OrganizationError, OpenAICompatibleOrganizer, parse_organization
+from .sources import MetadataReader, RecordGroup, SourceScanner, source_signature
+from .state import StateStore, utc_now
+from .storage import RecordStore, extract_frontmatter
+
+
+class Organizer(Protocol):
+    def organize(self, text: str) -> Organization | Mapping[str, Any]: ...
+
+
+class RecordPipeline:
+    """Process normalized groups through storage, AI, state, and Git adapters."""
+
+    def __init__(
+        self,
+        scanner: SourceScanner,
+        store: RecordStore,
+        organizer: Organizer | None,
+        state: StateStore,
+        *,
+        committer: GitCommitter | None = None,
+        mode: str = "collect-and-organize",
+        auto_commit: bool = True,
+        retry_ai: bool = False,
+        dry_run: bool = False,
+    ) -> None:
+        self.scanner = scanner
+        self.store = store
+        self.organizer = organizer
+        self.state = state
+        self.committer = committer
+        self.mode = mode
+        self.auto_commit = auto_commit
+        self.retry_ai = retry_ai
+        self.dry_run = dry_run
+
+    def process(self, group: RecordGroup) -> dict[str, Any]:
+        signature = source_signature(group)
+        previous = self.state.get(group.record_id)
+        record_path = self.store.record_path(group)
+        existing = self.store.read(group)
+        existing_mode = extract_frontmatter(existing or "").get("processing_mode")
+        effective_mode = existing_mode if existing_mode in {"capture-only", "collect-and-organize"} else self.mode
+
+        if (
+            previous
+            and previous.get("commit_pending")
+            and record_path.is_file()
+            and previous.get("signature") == signature
+            and previous.get("processing_mode", self.mode) == effective_mode
+            and not self.retry_ai
+        ):
+            if self.committer is None or not self.auto_commit:
+                return {
+                    "record_id": group.record_id,
+                    "status": "error",
+                    "error": "record commit is still pending but Git is disabled",
+                    "path": str(record_path),
+                }
+            try:
+                commit = self.committer.commit(record_path, group.record_id, self.state.path)
+            except (GitCommitError, OSError, RuntimeError) as exc:
+                return {
+                    "record_id": group.record_id,
+                    "status": "error",
+                    "error": str(exc)[:160],
+                    "path": str(record_path),
+                }
+            pending_state = dict(previous)
+            pending_state["commit_pending"] = False
+            self.state.set(group.record_id, pending_state)
+            self.state.save()
+            return {
+                "record_id": group.record_id,
+                "status": previous.get("status", "completed"),
+                "commit": commit,
+                "path": str(record_path),
+            }
+
+        if (
+            previous
+            and record_path.is_file()
+            and previous.get("signature") == signature
+            and previous.get("processing_mode", self.mode) == effective_mode
+            and not self.retry_ai
+            and not previous.get("commit_pending")
+        ):
+            return {"record_id": group.record_id, "status": "unchanged"}
+
+        if not self.dry_run:
+            self.store.copy_sources(group)
+        raw_text, transcript = self.store.raw_content(group)
+        ai_status = "skipped" if effective_mode == "capture-only" else "pending"
+        ai_error: str | None = None
+        organization: Organization | None = None
+
+        if effective_mode != "capture-only" and (raw_text or transcript):
+            if not self.dry_run:
+                if self.organizer is None:
+                    ai_status = "error"
+                    ai_error = "organizer is not configured"
+                else:
+                    try:
+                        organization = parse_organization(
+                            self.organizer.organize("\n\n".join(item for item in (raw_text, transcript) if item))
+                        )
+                        ai_status = "completed"
+                    except (OrganizationError, OSError, RuntimeError, ValueError) as exc:
+                        ai_status = "error"
+                        ai_error = str(exc)[:160]
+        elif effective_mode != "capture-only":
+            ai_error = "transcript pending"
+
+        if not self.dry_run:
+            self.store.write_record(
+                group,
+                signature,
+                ai_status=ai_status,
+                ai_error=ai_error,
+                processing_mode=effective_mode,
+            )
+            if organization is not None:
+                self.store.update_organization(record_path, organization)
+
+        state_status = "error" if ai_error and ai_status == "error" else ai_status
+        self.state.set(
+            group.record_id,
+            {
+                "signature": signature,
+                "status": state_status,
+                "processing_mode": effective_mode,
+                "updated_at": self.state.clock(),
+                "sources": [str(path) for path in group.all_sources],
+                "commit_pending": False,
+            },
+        )
+        if not self.dry_run:
+            self.state.save()
+
+        commit: str | None = None
+        if not self.dry_run and self.auto_commit and self.committer is not None:
+            try:
+                commit = self.committer.commit(record_path, group.record_id, self.state.path)
+            except (GitCommitError, OSError, RuntimeError) as exc:
+                pending_state = self.state.get(group.record_id) or {}
+                pending_state["commit_pending"] = True
+                self.state.set(group.record_id, pending_state)
+                self.state.save()
+                return {
+                    "record_id": group.record_id,
+                    "status": "error",
+                    "error": str(exc)[:160],
+                    "path": str(record_path),
+                }
+
+        return {
+            "record_id": group.record_id,
+            "status": ai_status,
+            "sources": len(group.all_sources),
+            "audio": len(group.audio),
+            "transcript": bool(transcript),
+            "commit": commit,
+            "path": str(record_path),
+            **({"error": ai_error} if ai_error else {}),
+        }
+
+    def scan(self) -> list[dict[str, Any]]:
+        return [self.process(group) for group in self.scanner.scan()]
+
+    def process_group(self, group: RecordGroup) -> dict[str, Any]:
+        """Compatibility spelling for callers migrating from the prototype."""
+
+        return self.process(group)
+
+    def watch(self, interval: float) -> None:
+        while True:
+            for result in self.scan():
+                if result.get("status") != "unchanged":
+                    print(result, flush=True)
+            time.sleep(interval)
+
+
+def pipeline_from_settings(
+    settings: Settings,
+    *,
+    metadata_reader: MetadataReader | Callable[..., Any] | None = None,
+    transport: Any | None = None,
+    git_runner: CommandRunner | None = None,
+    clock: Callable[[], str] | None = None,
+) -> RecordPipeline:
+    scanner = SourceScanner(settings.sources, metadata_reader=metadata_reader)
+    store = RecordStore(settings.vault, clock=clock or utc_now)
+    state = StateStore(settings.state_path, clock=clock or utc_now)
+    organizer = OpenAICompatibleOrganizer(
+        settings.endpoint,
+        settings.model,
+        api_key=settings.api_key,
+        reasoning_effort=settings.reasoning_effort,
+        timeout=settings.timeout,
+        transport=transport,
+    )
+    committer = GitCommitter(settings.vault, runner=git_runner)
+    return RecordPipeline(
+        scanner,
+        store,
+        organizer,
+        state,
+        committer=committer,
+        mode=settings.mode,
+        auto_commit=settings.auto_commit,
+        retry_ai=settings.retry_ai,
+        dry_run=settings.dry_run,
+    )

@@ -1,17 +1,20 @@
 # Record bridge
 
-這是目前把 Apple capture 接到 Obsidian 的最小背景橋接器。它不建立另一個資料庫：每一筆來源都落在同一個資料夾中的 `record.md`，音訊附件也在同一筆記錄底下。
-
-## 收進來的來源
-
-- macOS Voice Memos 的 iCloud 同步目錄：
-  `~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings`
-- iPhone Shortcuts／Files 可寫入的 iCloud Drive 收件匣：
-  `~/Library/Mobile Documents/com~apple~CloudDocs/AhaMomentInbox`
-
-同名的 `.transcript.txt`／`.transcript.md` 會被視為該音訊的逐字稿；同名一般 `.txt`／`.md` 會被視為原始文字。沒有逐字稿時，音訊仍會先收錄，之後只要把同名逐字稿放進收件匣，下一輪掃描就會更新同一筆記錄。
+這個目錄保留舊 prototype 的相容入口。真正的記錄管線現在位於
+`aha_moment_recorder`，只使用 Python standard library；舊指令仍可直接執行，
+但會轉交給同一套公開 adapters 與 `RecordPipeline`。
 
 ## 手動跑一次
+
+推薦使用 package CLI：
+
+```sh
+python3 -m aha_moment_recorder run \
+  --vault "$HOME/Documents/Aha Moment Vault" \
+  --source "$HOME/Library/Mobile Documents/com~apple~CloudDocs/AhaMomentInbox"
+```
+
+遷移期間原本的 invocation 仍然有效：
 
 ```sh
 python3 prototype/record-bridge/record_bridge.py \
@@ -21,29 +24,48 @@ python3 prototype/record-bridge/record_bridge.py \
 預設模式是 `collect-and-organize`。只想保留來源時：
 
 ```sh
-python3 prototype/record-bridge/record_bridge.py \
+python3 -m aha_moment_recorder run \
   --vault "$HOME/Documents/Aha Moment Vault" \
   --mode capture-only
 ```
 
-每筆 `record.md` 的 frontmatter 也有 `processing_mode`。把單筆改成
-`capture-only` 會只收錄；之後改回 `collect-and-organize`，下一輪背景掃描會在
-同一筆記錄補上 Luna 結果，不會建立第二份檔案。
+## 收進來的來源
 
-## 輸出
+- 音訊：`.m4a`、`.mp3`、`.wav`、`.caf`、`.aif`、`.aiff`、`.flac`
+- 文字：`.txt`、`.md`、`.markdown`
+- 附件：常見圖片、PDF、Office、影片、CSV/JSON/XML 與 ZIP 檔
+
+同名的 `.transcript.txt`、`.transcript.md` 或
+`.transcript.markdown` 會被視為逐字稿 sidecar；即使沒有音訊，逐字稿也會
+保留在同一筆記錄中。原始文字、原始音訊、逐字稿與附件會放在同一個
+`records/<record-id>/` 目錄，AI 只更新 `record.md` 的 `## AI 整理` 區塊。
+
+## 設定
+
+設定來源的優先順序是 TOML → environment → CLI。可用 `--config` 指定 TOML：
+
+```toml
+[record_bridge]
+vault = "/path/to/vault"
+sources = ["/path/to/inbox"]
+state = "/path/to/vault/.bridge/state.json"
+endpoint = "https://provider.example/v1"
+model = "compatible-model"
+mode = "collect-and-organize"
+```
+
+常用 environment names 是 `AHA_VAULT`、`AHA_SOURCES`、`AHA_ENDPOINT`、
+`AHA_MODEL`、`AHA_MODE`、`AHA_API_KEY` 與 `AHA_API_KEY_FILE`。API key 不放在
+TOML 或 CLI value 中；HTTP adapter 呼叫標準 OpenAI-compatible
+`/chat/completions` endpoint。
+
+輸出位置：
 
 ```text
 <vault>/records/<record-id>/record.md
-<vault>/records/<record-id>/attachments/raw-audio.m4a
+<vault>/records/<record-id>/attachments/
 <vault>/.bridge/state.json
 ```
 
-`record.md` 會保留原始文字、原始音訊、逐字稿，以及 Luna 產生的分類、主題、結構化輸出和摘要。AI 只追加到 `## AI 整理`，不會覆寫原始區塊。若 Vault 本身是 Git worktree，預設每次記錄變更會建立一個 commit；沒有 Git 時仍正常寫入。
-
-## 背景監看
-
-LaunchAgent 使用同一個指令加上 `--watch`，每 15 秒掃描一次。它只讀取 Voice Memos／iCloud 收件匣，寫入指定 Vault 與 `/tmp/aha-moment-recorder-bridge-*.log`；不會開啟或切換任何 App 視窗。
-
-## 已知邊界
-
-Voice Memos 的 `.m4a` 會隨 iCloud 出現在 Mac，但 Apple 沒有提供穩定的 transcript sidecar 檔案 API。橋接器因此把「音訊已保留、逐字稿待補」做成明確狀態，而不是假裝已經有逐字稿。逐字稿可以由 Apple Notes／Voice Memos 分享或 Shortcut 寫入同名 sidecar；收到後會自動補進同一筆記錄並啟動 Luna。
+若 Vault 本身就是 Git worktree，Git adapter 只會針對該筆記錄目錄與 state
+建立 path-scoped commit；commit 失敗會保留可重試狀態。

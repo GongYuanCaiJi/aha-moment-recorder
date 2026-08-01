@@ -1,0 +1,17 @@
+[build-system]
+requires = []
+build-backend = "build_backend"
+backend-path = ["."]
+
+[project]
+name = "aha-moment-recorder"
+version = "0.1.0"
+description = "Portable standard-library core pipeline for personal records"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+aha-moment-recorder = "aha_moment_recorder.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["aha_moment_recorder*"]
