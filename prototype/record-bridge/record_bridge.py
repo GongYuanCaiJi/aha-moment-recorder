@@ -394,6 +394,7 @@ class Bridge:
         existing: str | None,
         ai_status: str,
         ai_error: str | None = None,
+        processing_mode: str | None = None,
     ) -> str:
         raw_text, transcript = self._raw_content(group)
         existing_frontmatter = extract_frontmatter(existing or "")
@@ -408,7 +409,7 @@ class Bridge:
             f"source_type: {yaml_value(group.source_type)}",
             f"title: {yaml_value(group.title)}",
             f"captured_at: {yaml_value(captured)}",
-            f"processing_mode: {yaml_value(self.mode)}",
+            f"processing_mode: {yaml_value(processing_mode or self.mode)}",
             "source_status: \"preserved\"",
             f"ai_status: {yaml_value(ai_status)}",
             f"source_hash: {yaml_value(signature)}",
@@ -594,16 +595,24 @@ class Bridge:
         signature = self._group_signature(group)
         previous = self.state.setdefault("groups", {}).get(group.record_id, {})
         previous_snapshot = dict(previous)
-        if previous.get("signature") == signature and not self.retry_ai:
-            return {"record_id": group.record_id, "status": "unchanged"}
         record_path = self._record_path(group)
         existing = read_text(record_path) if record_path.is_file() else None
+        existing_mode = extract_frontmatter(existing or "").get("processing_mode")
+        effective_mode = (
+            existing_mode if existing_mode in {"capture-only", "collect-and-organize"} else self.mode
+        )
+        if (
+            previous.get("signature") == signature
+            and previous.get("processing_mode", self.mode) == effective_mode
+            and not self.retry_ai
+        ):
+            return {"record_id": group.record_id, "status": "unchanged"}
         self._copy_sources(group)
         raw_text, transcript = self._raw_content(group)
-        ai_status = "skipped" if self.mode == "capture-only" else "pending"
+        ai_status = "skipped" if effective_mode == "capture-only" else "pending"
         ai_error: str | None = None
         ai_result: dict[str, Any] | None = None
-        if self.mode != "capture-only" and (raw_text or transcript):
+        if effective_mode != "capture-only" and (raw_text or transcript):
             try:
                 if not self.dry_run:
                     ai_result = self._call_luna("\n\n".join(item for item in (raw_text, transcript) if item))
@@ -614,10 +623,12 @@ class Bridge:
             except (RuntimeError, OSError, ValueError) as exc:
                 ai_status = "error"
                 ai_error = str(exc)[:120]
-        elif self.mode != "capture-only":
+        elif effective_mode != "capture-only":
             ai_error = "transcript pending"
         if not self.dry_run:
-            content = self._render_record(group, signature, existing, ai_status, ai_error)
+            content = self._render_record(
+                group, signature, existing, ai_status, ai_error, effective_mode
+            )
             if not record_path.is_file() or read_text(record_path) != content:
                 record_path.parent.mkdir(parents=True, exist_ok=True)
                 record_path.write_text(content, encoding="utf-8")
@@ -630,6 +641,7 @@ class Bridge:
         self.state["groups"][group.record_id] = {
             "signature": signature,
             "status": ai_status,
+            "processing_mode": effective_mode,
             "updated_at": utc_now(),
             "sources": [str(path) for path in group.all_sources],
         }

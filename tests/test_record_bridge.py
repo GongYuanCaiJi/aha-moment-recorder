@@ -97,6 +97,27 @@ class RecordBridgeTests(unittest.TestCase):
             content = next((vault / "records").rglob("record.md")).read_text(encoding="utf-8")
             self.assertIn("只收錄（未啟用 AI 整理）", content)
 
+    def test_record_level_mode_can_be_switched_later(self):
+        FakeBridge.calls = 0
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = root / "inbox"
+            vault = root / "vault"
+            inbox.mkdir()
+            (inbox / "mode.md").write_text("可稍後整理的原始文字。", encoding="utf-8")
+            bridge = FakeBridge(vault=vault, sources=[inbox], mode="capture-only", auto_commit=False)
+            self.assertEqual(bridge.scan()[0]["status"], "skipped")
+            record = next((vault / "records").rglob("record.md"))
+            content = record.read_text(encoding="utf-8").replace(
+                'processing_mode: "capture-only"',
+                'processing_mode: "collect-and-organize"',
+            )
+            record.write_text(content, encoding="utf-8")
+            result = bridge.scan()[0]
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(FakeBridge.calls, 1)
+            self.assertIn('processing_mode: "collect-and-organize"', record.read_text(encoding="utf-8"))
+
     def test_state_is_machine_readable(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

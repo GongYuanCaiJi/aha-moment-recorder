@@ -26,6 +26,10 @@ python3 prototype/record-bridge/record_bridge.py \
   --mode capture-only
 ```
 
+每筆 `record.md` 的 frontmatter 也有 `processing_mode`。把單筆改成
+`capture-only` 會只收錄；之後改回 `collect-and-organize`，下一輪背景掃描會在
+同一筆記錄補上 Luna 結果，不會建立第二份檔案。
+
 ## 輸出
 
 ```text
