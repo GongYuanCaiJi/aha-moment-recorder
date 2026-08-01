@@ -1,7 +1,7 @@
 # Issue #16：既有產品能力與個人記錄工作流適配研究
 
-研究日期：2026-08-01  
-研究範圍：Apple Notes、Apple Voice Memos、Obsidian、Drafts、Bear、Typeless；以 iPhone-first、local-first 的個人記錄工作流為判準。  
+研究日期：2026-08-01
+研究範圍：Apple Notes、Apple Voice Memos、Obsidian、Drafts、Bear、Typeless；以 iPhone-first、local-first 的個人記錄工作流為判準。
 Issue：[#16 重新研究既有產品能力與個人工作方式適配](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/16)
 
 ## 先講結論
