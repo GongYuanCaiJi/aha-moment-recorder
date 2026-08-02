@@ -24,6 +24,10 @@
 
 這些未完成項不會阻止目前的核心 CLI 開源；它們應在新增功能前先建立獨立 issue 與驗收條件。
 
+## 目前 GitHub 分支狀態
+
+完整開源準備內容目前在 `agent/define-ai-output`，並由 [draft PR #14](https://github.com/GongYuanCaiJi/aha-moment-recorder/pull/14) 對應到現有 default branch。由於本機安全規則禁止未經人工 review 直接 push 到 `main`，default branch 尚未切換；在 PR 合併、default branch 整理與 fresh clone 再驗證前，不應把 repository visibility 改為 public。
+
 ## 公開前檢查
 
 1. 確認 `git status`、staged diff 與 Git history 沒有 Vault、錄音、逐字稿、API key、local config 或 LaunchAgent log。
