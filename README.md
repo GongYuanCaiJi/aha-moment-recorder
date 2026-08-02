@@ -144,6 +144,8 @@ aha-moment-recorder uninstall-agent
 
 Vault 內的 `.bridge/state.json` 保存可重試的處理狀態。原始文字、音訊、逐字稿與附件留在同一筆記錄；AI 整理只更新明確的 AI section。只收錄模式不會送出 AI request。
 
+目前不會自行替純音訊檔產生逐字稿：只有音訊、尚未有逐字稿的記錄會保留原始音訊並標成 `transcript pending`，等逐字稿來源出現後再自動整理。這個 repo 不會在沒有明確設定下把私人音訊送到另一個轉錄服務。
+
 請把 Vault、錄音、逐字稿、key file 與 LaunchAgent log 視為私人資料，不要放進 GitHub checkout。repo 的 `.gitignore` 會忽略常見 `records/`、`.bridge/`、log、local config 與 credential pattern，但提交前仍應檢查 staged diff。
 
 ## 常見失敗
