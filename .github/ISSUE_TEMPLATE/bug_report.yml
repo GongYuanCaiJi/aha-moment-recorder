@@ -1,0 +1,49 @@
+name: 回報問題
+description: 回報可重現的程式或文件問題
+title: "[Bug] "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        請先移除 API key、私人路徑、錄音、逐字稿與其他個人資料。安全漏洞請依照 SECURITY.md 私下回報。
+  - type: textarea
+    id: description
+    attributes:
+      label: 問題描述
+      description: 清楚說明實際結果與預期結果。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 重現步驟
+      description: 提供最小 fixture、CLI command 或測試步驟。
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本或 commit
+      placeholder: 例如 0.1.0 或 49fedb4
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      options:
+        - macOS
+        - Linux（核心 package）
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脫敏後的輸出
+      description: 只貼已移除秘密與個人資料的錯誤訊息或 log。
+      render: text

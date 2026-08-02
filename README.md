@@ -4,6 +4,8 @@
 
 這個 repo 提供可攜的記錄管線；macOS LaunchAgent 只是可選的背景執行 adapter。
 
+目前是 private pre-release repository。核心 CLI、測試、CI、安裝與安全邊界已整理成可公開的狀態；已知未包含的功能與正式公開前檢查見 [開源準備狀態](docs/open-source-readiness.md)。
+
 ## 需要什麼
 
 - macOS（`install-agent` / `uninstall-agent` 需要 macOS；核心 package 本身可在其他平台測試）
@@ -165,4 +167,4 @@ python3 -m py_compile aha_moment_recorder/*.py build_backend.py
 git diff --check
 ```
 
-貢獻方式見 [CONTRIBUTING.md](CONTRIBUTING.md)，安全問題見 [SECURITY.md](SECURITY.md)。本專案採 [MIT License](LICENSE)。
+貢獻方式見 [CONTRIBUTING.md](CONTRIBUTING.md)，安全問題見 [SECURITY.md](SECURITY.md)。本專案採 [MIT License](LICENSE)。行為準則見 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)，變更紀錄見 [CHANGELOG.md](CHANGELOG.md)。

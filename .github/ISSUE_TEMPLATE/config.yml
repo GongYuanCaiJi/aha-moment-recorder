@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全問題
+    url: https://github.com/GongYuanCaiJi/aha-moment-recorder/security/policy
+    about: 請先閱讀 SECURITY.md，不要在公開 issue 貼出秘密或漏洞細節。
