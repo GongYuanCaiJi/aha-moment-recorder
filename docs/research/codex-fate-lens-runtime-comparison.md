@@ -18,10 +18,7 @@
 | Fate Lens (`019f9236-c235-7d72-806d-5b4d31c8c9de`) | 2026-07-24 03:41:30 | `0.145.0-alpha.30` | Luna / medium / V1 | 後來切成 Sol / high，仍是 V1 |
 | aha-moment-recorder (`019f9f6b-493f-7a93-81b9-ac4aeb0d024c`) | 2026-07-26 17:13:56 | `0.146.0-alpha.3.1` | Sol / high / V2；`explicitRequestOnly` | 2026-08-01 切成 Luna / max，仍是 V2 |
 
-來源是兩條 task 的原始 rollout `session_meta` / `turn_context`，不是從側欄名稱推測：
-
-- Fate Lens：`/Users/shuaige/.codex/path-move-backups/thread-019f9236-20260727-023340/rollout-2026-07-24T11-41-30-019f9236-c235-7d72-806d-5b4d31c8c9de.jsonl`
-- aha：`/Volumes/PS3000/AI_Generated_Data/Codex/storage-relocation/2026-04-21-live-cutover/sessions/2026/07/27/rollout-2026-07-27T01-13-56-019f9f6b-493f-7a93-81b9-ac4aeb0d024c.jsonl`
+來源是兩條 task 的原始 rollout `session_meta` / `turn_context`，不是從側欄名稱推測。原始 rollout 只存在於本機 Codex session storage，沒有提交到 repository；下方只保留可重現的 thread identifier 與觀察結果，不公開本機 storage 路徑。
 
 本機 `codex debug models` 目前也顯示：`gpt-5.6-luna → v1`，`gpt-5.6-sol → v2`。Codex source 將這個欄位描述為「此 model 建立新 thread 時選用的 multi-agent backend」：
 <https://github.com/openai/codex/blob/main/codex-rs/protocol/src/openai_models.rs#L2635-L2642>
@@ -90,7 +87,7 @@
 
    ```sh
    codex exec --ephemeral \
-     -C /Users/shuaige/Documents/aha-moment-recorder \
+     -C <repo-checkout> \
      -m gpt-5.6-luna \
      -c model_reasoning_effort='max' \
      --disable multi_agent_v2 \
