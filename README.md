@@ -15,14 +15,14 @@
 
 ## 安裝
 
-從 checkout 安裝，不需要第三方 runtime dependency：
+從 checkout 安裝；核心不需要第三方 runtime dependency。若要匯入既有 Apple Notes，請安裝 macOS extra：
 
 ```sh
 git clone https://github.com/GongYuanCaiJi/aha-moment-recorder.git
 cd aha-moment-recorder
 python3 -m venv .venv
 . .venv/bin/activate
-python3 -m pip install .
+python3 -m pip install '.[macos]'
 aha-moment-recorder --help
 ```
 
@@ -59,7 +59,13 @@ auto_commit = true
 retry_ai = false
 dry_run = false
 api_key_file = "/Users/you/.config/aha-moment-recorder/api-key"
+apple_notes_database = "/Users/you/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"
+include_deleted_notes = false
 ```
+
+設定 `apple_notes_database` 後，`run`／`watch` 會把既有 Apple Notes（預設不含「Recently Deleted」）讀進同一套記錄管線；備忘錄文字、可讀出的音訊與附件會放在同一筆 `record.md`，暫時讀不到的附件會留下名稱與待重試標記。匯入用的暫存來源位於 Vault 的 `.bridge/apple-notes-sources/`，不會放進 GitHub repo。
+
+Apple Notes 的資料庫受 macOS 隱私權保護。若終端機可以讀取、但 LaunchAgent 的 `doctor` 顯示匯入延後，請在「系統設定 → 隱私權與安全性 → 完整磁碟取用」允許執行該 virtualenv 的 Python；這是 macOS 的一次性權限，不是程式繞過權限。沒有這項權限時，Voice Memos 與其他來源仍會繼續處理，Apple Notes 會在下一輪重試。
 
 不要把 `api_key` 寫入 TOML。可用環境變數：
 

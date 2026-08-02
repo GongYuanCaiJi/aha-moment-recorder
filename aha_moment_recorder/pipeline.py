@@ -6,10 +6,11 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
+from .apple_notes import AppleNotesScanner
 from .config import CAPTURE_ONLY, COLLECT_AND_ORGANIZE, Settings, VALID_MODES, ProcessingMode
 from .git_adapter import GitCommitError, GitCommitter, CommandRunner
 from .organization import Organization, OrganizationError, OpenAICompatibleOrganizer, parse_organization
-from .sources import MetadataReader, RecordGroup, SourceScanner, source_signature
+from .sources import CompositeScanner, MetadataReader, RecordGroup, Scanner, SourceScanner, source_signature
 from .state import StateStore, utc_now
 from .storage import RecordStore, extract_frontmatter
 
@@ -23,7 +24,7 @@ class RecordPipeline:
 
     def __init__(
         self,
-        scanner: SourceScanner,
+        scanner: Scanner,
         store: RecordStore,
         organizer: Organizer | None,
         state: StateStore,
@@ -45,7 +46,17 @@ class RecordPipeline:
         self.dry_run = dry_run
 
     def process(self, group: RecordGroup) -> dict[str, Any]:
-        signature = source_signature(group)
+        try:
+            signature = source_signature(group)
+        except OSError as exc:
+            # iCloud may expose a Voice Memo path before the file is fully
+            # hydrated.  Leave state untouched so the next watch tick retries
+            # instead of terminating the LaunchAgent.
+            return {
+                "record_id": group.record_id,
+                "status": "deferred",
+                "error": f"source is not ready: {str(exc)[:120]}",
+            }
         previous = self.state.get(group.record_id)
         record_path = self.store.record_path(group)
         existing = self.store.read(group)
@@ -92,14 +103,22 @@ class RecordPipeline:
             and record_path.is_file()
             and previous.get("signature") == signature
             and previous.get("processing_mode", self.mode) == effective_mode
+            and previous.get("status") != "error"
             and not self.retry_ai
             and not previous.get("commit_pending")
         ):
             return {"record_id": group.record_id, "status": "unchanged"}
 
-        if not self.dry_run:
-            self.store.copy_sources(group)
-        raw_text, transcript = self.store.raw_content(group)
+        try:
+            if not self.dry_run:
+                self.store.copy_sources(group)
+            raw_text, transcript = self.store.raw_content(group)
+        except OSError as exc:
+            return {
+                "record_id": group.record_id,
+                "status": "deferred",
+                "error": f"source changed while reading: {str(exc)[:120]}",
+            }
         ai_status = "skipped" if effective_mode == CAPTURE_ONLY else "pending"
         ai_error: str | None = None
         organization: Organization | None = None
@@ -175,7 +194,10 @@ class RecordPipeline:
         }
 
     def scan(self) -> list[dict[str, Any]]:
-        return [self.process(group) for group in self.scanner.scan()]
+        results = [self.process(group) for group in self.scanner.scan()]
+        for error in getattr(self.scanner, "errors", ()):
+            results.append({"record_id": "source-scan", "status": "deferred", "error": error})
+        return results
 
     def process_group(self, group: RecordGroup) -> dict[str, Any]:
         """Compatibility spelling for callers migrating from the prototype."""
@@ -198,7 +220,16 @@ def pipeline_from_settings(
     git_runner: CommandRunner | None = None,
     clock: Callable[[], str] | None = None,
 ) -> RecordPipeline:
-    scanner = SourceScanner(settings.sources, metadata_reader=metadata_reader)
+    scanners = [SourceScanner(settings.sources, metadata_reader=metadata_reader)]
+    if settings.apple_notes_database is not None:
+        scanners.append(
+            AppleNotesScanner(
+                settings.apple_notes_database,
+                settings.vault / ".bridge/apple-notes-sources",
+                include_deleted=settings.include_deleted_notes,
+            )
+        )
+    scanner = CompositeScanner(scanners)
     store = RecordStore(settings.vault, clock=clock or utc_now)
     state = StateStore(settings.state_path, clock=clock or utc_now)
     organizer = OpenAICompatibleOrganizer(

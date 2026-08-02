@@ -1,6 +1,7 @@
 """Portable core pipeline for the personal record system."""
 
 from .config import ConfigError, Settings, load_settings
+from .apple_notes import AppleNotesImportError, AppleNotesScanner
 from .git_adapter import GitCommitError, GitCommitter
 from .launchagent import LaunchAgentError, LaunchAgentManager, LaunchAgentStatus
 from .organization import (
@@ -17,6 +18,8 @@ from .storage import RecordStore
 
 __all__ = [
     "ConfigError",
+    "AppleNotesImportError",
+    "AppleNotesScanner",
     "FOUR_FIELDS",
     "GitCommitError",
     "GitCommitter",

@@ -18,7 +18,8 @@ from .config import (
     load_settings,
     write_config,
 )
-from .launchagent import LaunchAgentError, LaunchAgentManager
+from .apple_notes import AppleNotesImportError, AppleNotesScanner
+from .launchagent import DEFAULT_LABEL, LaunchAgentError, LaunchAgentManager
 from .pipeline import pipeline_from_settings
 
 
@@ -37,6 +38,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model")
     parser.add_argument("--mode", choices=[CAPTURE_ONLY, COLLECT_AND_ORGANIZE])
     parser.add_argument("--api-key-file", type=Path)
+    parser.add_argument("--apple-notes-database", type=Path)
+    parser.add_argument("--include-deleted-notes", action="store_true", default=None)
+    parser.add_argument("--no-apple-notes", action="store_true", default=None)
     parser.add_argument("--reasoning-effort", dest="reasoning_effort")
     parser.add_argument("--timeout", type=float)
     parser.add_argument("--no-git-commit", action="store_true", default=None)
@@ -46,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interval", type=float, default=15.0)
     parser.add_argument("--after", help="only process source files modified at/after this ISO-8601 time")
     parser.add_argument("--agent-path", type=Path, default=DEFAULT_AGENT_PATH)
+    parser.add_argument("--agent-label", default=DEFAULT_LABEL)
     parser.add_argument("--stdout-path", type=Path)
     parser.add_argument("--stderr-path", type=Path)
     parser.add_argument("--force", action="store_true", default=False)
@@ -62,6 +67,7 @@ def _cli_values(args: argparse.Namespace) -> dict[str, Any]:
     values.pop("stdout_path", None)
     values.pop("stderr_path", None)
     values.pop("force", None)
+    values.pop("agent_label", None)
     return {key: value for key, value in values.items() if value is not None}
 
 
@@ -78,6 +84,7 @@ def _doctor(
     settings: Settings,
     *,
     agent_path: Path = DEFAULT_AGENT_PATH,
+    agent_label: str = DEFAULT_LABEL,
     launchctl_runner: Any | None = None,
     platform: str | None = None,
 ) -> int:
@@ -95,6 +102,13 @@ def _doctor(
         "state_parent": {"path": str(settings.state_path.parent), "exists": settings.state_path.parent.is_dir()},
         "endpoint": settings.endpoint,
         "api_key": "configured" if settings.api_key else "not configured",
+        "apple_notes": {
+            "database": str(settings.apple_notes_database) if settings.apple_notes_database else None,
+            "enabled": settings.apple_notes_database is not None,
+            "exists": bool(settings.apple_notes_database and settings.apple_notes_database.is_file()),
+            "parser_available": AppleNotesScanner.dependency_available(),
+            "include_deleted": settings.include_deleted_notes,
+        },
     }
     actual_platform = sys.platform if platform is None else platform
     if actual_platform == "darwin":
@@ -104,6 +118,7 @@ def _doctor(
                 agent_path,
                 runner=launchctl_runner,
                 platform=actual_platform,
+                label=agent_label,
             ).status()
             agent.update(status.as_dict())
             agent["stdout_exists"] = bool(status.stdout_path and status.stdout_path.exists())
@@ -180,6 +195,10 @@ def _agent_command(settings: Settings) -> list[str]:
         )
         for source in settings.sources:
             command.extend(["--source", str(source)])
+        if settings.apple_notes_database is not None:
+            command.extend(["--apple-notes-database", str(settings.apple_notes_database)])
+        if settings.include_deleted_notes:
+            command.append("--include-deleted-notes")
         if settings.api_key_file:
             command.extend(["--api-key-file", str(settings.api_key_file)])
         if not settings.auto_commit:
@@ -195,6 +214,7 @@ def _install_agent(
     settings: Settings,
     path: Path,
     *,
+    label: str = DEFAULT_LABEL,
     stdout_path: Path | None = None,
     stderr_path: Path | None = None,
     launchctl_runner: Any | None = None,
@@ -208,6 +228,7 @@ def _install_agent(
     stderr_target = stderr_path or settings.vault / ".bridge/launchagent.stderr.log"
     manager = LaunchAgentManager(
         path,
+        label=label,
         runner=launchctl_runner,
         platform=actual_platform,
     )
@@ -231,11 +252,13 @@ def _install_agent(
 def _uninstall_agent(
     path: Path,
     *,
+    label: str = DEFAULT_LABEL,
     launchctl_runner: Any | None = None,
     platform: str | None = None,
 ) -> int:
     manager = LaunchAgentManager(
         path,
+        label=label,
         runner=launchctl_runner,
         platform=sys.platform if platform is None else platform,
     )
@@ -265,6 +288,7 @@ def main(
             return _doctor(
                 settings,
                 agent_path=args.agent_path,
+                agent_label=args.agent_label,
                 launchctl_runner=launchctl_runner,
                 platform=platform,
             )
@@ -272,6 +296,7 @@ def main(
             return _install_agent(
                 settings,
                 args.agent_path,
+                label=args.agent_label,
                 stdout_path=args.stdout_path,
                 stderr_path=args.stderr_path,
                 launchctl_runner=launchctl_runner,
@@ -280,6 +305,7 @@ def main(
         if args.command == "uninstall-agent":
             return _uninstall_agent(
                 args.agent_path,
+                label=args.agent_label,
                 launchctl_runner=launchctl_runner,
                 platform=platform,
             )
@@ -296,6 +322,9 @@ def main(
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
+    except AppleNotesImportError as exc:
+        print(f"Apple Notes import error: {exc}", file=sys.stderr)
+        return 1
     except LaunchAgentError as exc:
         print(f"launch agent error: {exc}", file=sys.stderr)
         return 1

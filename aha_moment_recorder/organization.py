@@ -124,7 +124,8 @@ def build_prompt(text: str) -> str:
     return (
         "請把下面一筆個人記錄做通用整理，只輸出 JSON，不要 Markdown code fence。"
         "欄位必須恰好是 classification、topic、structured_output、summary。"
-        "classification 是單一主要分類；topic 可是字串或字串陣列；"
+        "classification 是單一主要分類；topic 可是字串或字串陣列且不得為空；"
+        "若沒有明確主題，topic 請填「未分類」；"
         "structured_output 是忠於原意的可讀整理；summary 是簡短摘要。"
         "不要額外產生待辦欄位；若內容本身是待辦，可把待辦當作 classification。"
         "不要捏造來源沒有的資訊。\n\n記錄內容：\n"

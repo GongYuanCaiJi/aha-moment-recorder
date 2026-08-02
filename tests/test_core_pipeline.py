@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from aha_moment_recorder.config import ConfigError, load_settings
 from aha_moment_recorder.git_adapter import GitCommitError, GitCommitter
@@ -288,6 +289,44 @@ mode = "capture-only"
             self.assertEqual(second["status"], "completed")
             self.assertEqual(len(organizer.calls), 1)
             self.assertFalse(state.get("note-retry")["commit_pending"])
+
+    def test_unready_source_is_deferred_for_the_next_watch_tick(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = root / "inbox"
+            vault = root / "vault"
+            inbox.mkdir()
+            (inbox / "icloud.m4a").write_bytes(b"not fully hydrated")
+            pipeline = RecordPipeline(
+                SourceScanner([inbox]),
+                RecordStore(vault),
+                FakeOrganizer(),
+                StateStore(vault / ".bridge/state.json"),
+                auto_commit=False,
+            )
+            with patch("aha_moment_recorder.pipeline.source_signature", side_effect=OSError(11, "Resource deadlock avoided")):
+                result = pipeline.scan()[0]
+            self.assertEqual(result["status"], "deferred")
+            self.assertNotIn("groups", (vault / ".bridge/state.json").read_text(encoding="utf-8") if (vault / ".bridge/state.json").exists() else "")
+
+    def test_ai_error_is_retried_on_the_next_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = root / "inbox"
+            vault = root / "vault"
+            inbox.mkdir()
+            (inbox / "retry-ai.txt").write_text("可重試的 AI 內容", encoding="utf-8")
+            state = StateStore(vault / ".bridge/state.json")
+            pipeline = RecordPipeline(
+                SourceScanner([inbox]),
+                RecordStore(vault),
+                None,
+                state,
+                auto_commit=False,
+            )
+            self.assertEqual(pipeline.scan()[0]["status"], "error")
+            pipeline.organizer = FakeOrganizer()
+            self.assertEqual(pipeline.scan()[0]["status"], "completed")
 
     def test_git_committer_limits_commit_to_record_and_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

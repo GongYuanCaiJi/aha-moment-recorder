@@ -242,6 +242,11 @@ class RecordStore:
             for path in group.attachments:
                 lines.append(f"- [[attachments/{destinations[path]}]]（{path.name}）")
             lines.append("")
+        if group.missing_attachments:
+            lines.extend(["### 尚未讀出的附件", ""])
+            for name in group.missing_attachments:
+                lines.append(f"- {name}（Apple Notes 尚未提供本機檔案）")
+            lines.append("")
 
         preserved_ai = parse_ai_section(existing or "")
         if preserved_ai and ai_status not in {"pending", "error"}:

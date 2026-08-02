@@ -11,6 +11,9 @@ readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.11"
 dependencies = []
+
+[project.optional-dependencies]
+macos = ["apple-notes-parser>=0.2,<0.3"]
 authors = [{name = "GongYuanCaiJi"}]
 keywords = ["personal-records", "local-first", "obsidian", "macos", "openai-compatible"]
 classifiers = [

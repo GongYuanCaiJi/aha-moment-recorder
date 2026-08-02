@@ -72,6 +72,16 @@ class MetadataReader(Protocol):
     def read(self, path: Path) -> SourceMetadata: ...
 
 
+class Scanner(Protocol):
+    """Small scanner contract shared by file and database-backed sources."""
+
+    def scan(self) -> list["RecordGroup"]: ...
+
+
+class ScannerError(RuntimeError):
+    """A source could not be read during this scan and should be retried."""
+
+
 class FileMetadataReader:
     """Portable fallback metadata reader with no external command dependency."""
 
@@ -132,6 +142,7 @@ class RecordGroup:
     raw_text: list[Path] = field(default_factory=list)
     transcript: list[Path] = field(default_factory=list)
     attachments: list[Path] = field(default_factory=list)
+    missing_attachments: list[str] = field(default_factory=list)
     captured_at: str | None = field(default=None, repr=False)
 
     @property
@@ -323,6 +334,37 @@ class SourceScanner:
                 if any(path.stat().st_mtime >= self.after_epoch for path in group.all_sources)
             )
         return sorted(selected, key=lambda item: item.record_id)
+
+
+class CompositeScanner:
+    """Combine multiple source adapters into one deterministic scan."""
+
+    def __init__(self, scanners: Iterable[Scanner]) -> None:
+        self.scanners = tuple(scanners)
+        self.errors: list[str] = []
+
+    @property
+    def after_epoch(self) -> float | None:
+        for scanner in self.scanners:
+            if hasattr(scanner, "after_epoch"):
+                return getattr(scanner, "after_epoch")
+        return None
+
+    @after_epoch.setter
+    def after_epoch(self, value: float | None) -> None:
+        for scanner in self.scanners:
+            if hasattr(scanner, "after_epoch"):
+                setattr(scanner, "after_epoch", value)
+
+    def scan(self) -> list[RecordGroup]:
+        groups: list[RecordGroup] = []
+        self.errors = []
+        for scanner in self.scanners:
+            try:
+                groups.extend(scanner.scan())
+            except ScannerError as exc:
+                self.errors.append(str(exc))
+        return sorted(groups, key=lambda item: item.record_id)
 
 
 def sha256_file(path: Path) -> str:

@@ -43,6 +43,8 @@ class Settings:
     dry_run: bool = False
     api_key: str | None = field(default=None, repr=False)
     api_key_file: Path | None = None
+    apple_notes_database: Path | None = None
+    include_deleted_notes: bool = False
     config_path: Path | None = None
 
     @property
@@ -66,6 +68,11 @@ def _default_sources() -> tuple[Path, ...]:
         home / "Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings",
         home / "Library/Mobile Documents/com~apple~CloudDocs/AhaMomentInbox",
     )
+
+
+def _default_apple_notes_database() -> Path | None:
+    candidate = Path.home() / "Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"
+    return candidate if candidate.is_file() else None
 
 
 def _as_mapping(cli: Mapping[str, Any] | Any | None) -> dict[str, Any]:
@@ -288,6 +295,21 @@ def load_settings(
         if not api_key:
             raise ConfigError(f"API key file is empty: {api_key_file}")
 
+    apple_notes_value = (
+        None
+        if command_line.get("no_apple_notes") is True
+        else choose("apple_notes_database", default=_default_apple_notes_database())
+    )
+    apple_notes_database = (
+        _path(apple_notes_value, base=value_base("apple_notes_database"))
+        if apple_notes_value
+        else None
+    )
+    include_deleted_notes = _bool(
+        choose("include_deleted_notes", aliases=("include_deleted",), default=False),
+        name="include_deleted_notes",
+    )
+
     return Settings(
         vault=vault,
         sources=sources,
@@ -302,6 +324,8 @@ def load_settings(
         dry_run=dry_run,
         api_key=api_key,
         api_key_file=api_key_file,
+        apple_notes_database=apple_notes_database,
+        include_deleted_notes=include_deleted_notes,
         config_path=config_file,
     )
 
@@ -336,6 +360,9 @@ def write_config(path: Path | str, settings: Settings, *, overwrite: bool = Fals
     ]
     if settings.api_key_file is not None:
         lines.append(f"api_key_file = {quote(settings.api_key_file)}")
+    if settings.apple_notes_database is not None:
+        lines.append(f"apple_notes_database = {quote(settings.apple_notes_database)}")
+    lines.append(f"include_deleted_notes = {str(settings.include_deleted_notes).lower()}")
     lines.extend(
         [
             "",

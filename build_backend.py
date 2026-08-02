@@ -24,6 +24,8 @@ def _metadata() -> str:
             "Author: GongYuanCaiJi",
             "License: MIT",
             "Requires-Python: >=3.11",
+            "Provides-Extra: macos",
+            'Requires-Dist: apple-notes-parser (>=0.2,<0.3); extra == "macos"',
             "Keywords: personal-records, local-first, obsidian, macos, openai-compatible",
             "Project-URL: Repository, https://github.com/GongYuanCaiJi/aha-moment-recorder",
             "Project-URL: Issues, https://github.com/GongYuanCaiJi/aha-moment-recorder/issues",
