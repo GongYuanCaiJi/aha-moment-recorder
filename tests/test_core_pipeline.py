@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from aha_moment_recorder.config import ConfigError, load_settings
+from aha_moment_recorder.config import ConfigError, Settings, load_settings
 from aha_moment_recorder.git_adapter import GitCommitError, GitCommitter
 from aha_moment_recorder.organization import (
     OrganizationError,
@@ -268,6 +268,84 @@ stt_timeout = 42
             with self.assertRaises(ConfigError):
                 load_settings(config, env={}, cwd=root)
 
+    def test_validated_settings_snapshot_is_redacted_and_replayable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / "settings.toml"
+            key_file = root / "api-key.txt"
+            key_file.write_text("fixture-secret-value\n", encoding="utf-8")
+            config.write_text(
+                """
+[record_bridge]
+vault = "config-vault"
+sources = ["config-inbox"]
+state = "config-state.json"
+endpoint = "http://config/v1"
+model = "config-model"
+mode = "capture-only"
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            settings = load_settings(
+                config,
+                env={
+                    "AHA_ENDPOINT": "http://env/v1",
+                    "AHA_MODEL": "env-model",
+                    "AHA_API_KEY": "different-secret",
+                },
+                cli={
+                    "model": "cli-model",
+                    "mode": "collect-and-organize",
+                    "api_key_file": key_file,
+                },
+                cwd=root,
+            )
+
+            public_snapshot = settings.as_dict()
+            self.assertEqual(public_snapshot["model"], "cli-model")
+            self.assertEqual(public_snapshot["endpoint"], "http://env/v1")
+            self.assertEqual(public_snapshot["mode"], "collect-and-organize")
+            self.assertEqual(public_snapshot["api_key"], "configured")
+            self.assertNotIn("fixture-secret-value", repr(settings))
+            self.assertNotIn("fixture-secret-value", json.dumps(public_snapshot))
+
+            from aha_moment_recorder.cli import build_parser
+
+            args = build_parser().parse_args(["watch", *settings.to_cli_args()])
+            replayed = load_settings(
+                cli=vars(args),
+                env={
+                    "AHA_ENDPOINT": "http://changed-by-launchd/v1",
+                    "AHA_MODEL": "changed-by-launchd",
+                    "AHA_API_KEY": "changed-secret",
+                },
+                cwd=root,
+            )
+            self.assertEqual(replayed.as_dict(), public_snapshot)
+
+    def test_invalid_settings_report_the_field_and_constraint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with self.assertRaisesRegex(ConfigError, "timeout.*greater than zero"):
+                Settings(
+                    vault=root / "vault",
+                    sources=(root / "inbox",),
+                    state_path=root / "state.json",
+                    timeout=0,
+                )
+            with self.assertRaisesRegex(ConfigError, "timeout must be a number"):
+                load_settings(
+                    cli={
+                        "vault": root / "vault",
+                        "sources": [root / "inbox"],
+                        "state_path": root / "state.json",
+                        "timeout": "not-a-number",
+                    },
+                    cwd=root,
+                )
+
     def test_organization_is_strict_and_http_is_injectable(self) -> None:
         result = parse_organization(
             'prefix\n```json\n{"classification":"想法","topic":["測試"],"structured_output":{"nested":[1]},"summary":"摘要"}\n```\nsuffix'
@@ -363,6 +441,8 @@ stt_timeout = 42
             second = pipeline.scan()
             self.assertEqual(first[0]["status"], "completed")
             self.assertEqual(second[0]["status"], "unchanged")
+            self.assertEqual(first[0]["lifecycle"], "organized")
+            self.assertEqual(second[0]["lifecycle"], "organized")
             self.assertEqual(len(organizer.calls), 1)
             content = (vault / "records/note-only/record.md").read_text(encoding="utf-8")
             self.assertIn("只有逐字稿內容", content)
@@ -521,13 +601,16 @@ stt_timeout = 42
             first = pipeline.scan()[0]
             self.assertEqual(first["status"], "error")
             self.assertEqual(len(organizer.calls), 1)
+            self.assertEqual(first["lifecycle"], "failed")
             persisted = json.loads((vault / ".bridge/state.json").read_text(encoding="utf-8"))
             self.assertTrue(persisted["groups"]["note-retry"]["commit_pending"])
 
             second = pipeline.scan()[0]
             self.assertEqual(second["status"], "completed")
             self.assertEqual(len(organizer.calls), 1)
+            self.assertEqual(second["lifecycle"], "committed")
             self.assertFalse(state.get("note-retry")["commit_pending"])
+            self.assertEqual(state.get("note-retry")["lifecycle"], "committed")
 
     def test_unready_source_is_deferred_for_the_next_watch_tick(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

@@ -41,18 +41,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-key-file", type=Path)
     parser.add_argument("--apple-notes-database", type=Path)
     parser.add_argument("--include-deleted-notes", action="store_true", default=None)
+    parser.add_argument("--no-include-deleted-notes", action="store_true", default=None)
     parser.add_argument("--no-apple-notes", action="store_true", default=None)
     parser.add_argument("--reasoning-effort", dest="reasoning_effort")
     parser.add_argument("--timeout", type=float)
     parser.add_argument("--no-git-commit", action="store_true", default=None)
+    parser.add_argument("--auto-commit", action="store_true", dest="auto_commit", default=None)
     parser.add_argument("--retry-ai", action="store_true", default=None)
+    parser.add_argument("--no-retry-ai", action="store_true", default=None)
     parser.add_argument("--no-transcribe", action="store_true", default=None)
+    parser.add_argument("--transcribe", action="store_true", dest="auto_transcribe", default=None)
     parser.add_argument("--stt-command")
     parser.add_argument("--stt-ffmpeg-command")
     parser.add_argument("--stt-model", type=Path)
+    parser.add_argument("--no-stt-model", action="store_true", default=None)
     parser.add_argument("--stt-language")
     parser.add_argument("--stt-timeout", type=float)
     parser.add_argument("--dry-run", action="store_true", default=None)
+    parser.add_argument("--no-dry-run", action="store_true", default=None)
     parser.add_argument("--watch", action="store_true", default=None)
     parser.add_argument("--interval", type=float, default=15.0)
     parser.add_argument("--after", help="only process source files modified at/after this ISO-8601 time")
@@ -104,6 +110,7 @@ def _doctor(
         for path in settings.sources
     ]
     checks = {
+        "settings": settings.snapshot(),
         "vault": {"path": str(settings.vault), "exists": settings.vault.is_dir()},
         "sources": source_checks,
         "state_parent": {"path": str(settings.state_path.parent), "exists": settings.state_path.parent.is_dir()},
@@ -193,59 +200,7 @@ def _init(settings: Settings, *, config_path: Path | None = None, force: bool = 
 
 
 def _agent_command(settings: Settings) -> list[str]:
-    command = [sys.executable, "-m", "aha_moment_recorder", "watch"]
-    if settings.config_path:
-        command.extend(["--config", str(settings.config_path)])
-        # A CLI override must survive the hand-off to launchd; shell
-        # environment variables are not reliably inherited by LaunchAgents.
-        if settings.api_key_file:
-            command.extend(["--api-key-file", str(settings.api_key_file)])
-    else:
-        command.extend(
-            [
-                "--vault",
-                str(settings.vault),
-                "--state",
-                str(settings.state_path),
-                "--endpoint",
-                settings.endpoint,
-                "--model",
-                settings.model,
-                "--mode",
-                settings.mode,
-                "--reasoning-effort",
-                settings.reasoning_effort,
-                "--timeout",
-                str(settings.timeout),
-            ]
-        )
-        for source in settings.sources:
-            command.extend(["--source", str(source)])
-        if settings.apple_notes_database is not None:
-            command.extend(["--apple-notes-database", str(settings.apple_notes_database)])
-        if settings.include_deleted_notes:
-            command.append("--include-deleted-notes")
-        if settings.api_key_file:
-            command.extend(["--api-key-file", str(settings.api_key_file)])
-        if not settings.auto_commit:
-            command.append("--no-git-commit")
-        if settings.retry_ai:
-            command.append("--retry-ai")
-        if not settings.auto_transcribe:
-            command.append("--no-transcribe")
-        if settings.stt_command != "whisper-cli":
-            command.extend(["--stt-command", settings.stt_command])
-        if settings.stt_ffmpeg_command != "ffmpeg":
-            command.extend(["--stt-ffmpeg-command", settings.stt_ffmpeg_command])
-        if settings.stt_model is not None:
-            command.extend(["--stt-model", str(settings.stt_model)])
-        if settings.stt_language != "zh":
-            command.extend(["--stt-language", settings.stt_language])
-        if settings.stt_timeout != 300.0:
-            command.extend(["--stt-timeout", str(settings.stt_timeout)])
-        if settings.dry_run:
-            command.append("--dry-run")
-    return command
+    return [sys.executable, "-m", "aha_moment_recorder", "watch", *settings.to_cli_args()]
 
 
 def _install_agent(
@@ -278,6 +233,7 @@ def _install_agent(
     )
     payload = {
         "status": "installed",
+        "settings": settings.snapshot(),
         "path": str(path.expanduser().resolve()),
         "stdout_path": str(stdout_target.expanduser().resolve()),
         "stderr_path": str(stderr_target.expanduser().resolve()),
@@ -355,7 +311,13 @@ def main(
             pipeline.watch(args.interval)
             return 0
         results = pipeline.scan()
-        print(json.dumps({"vault": str(settings.vault), "results": results}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {"settings": settings.snapshot(), "vault": str(settings.vault), "results": results},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0 if all(item.get("status") != "error" for item in results) else 1
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
