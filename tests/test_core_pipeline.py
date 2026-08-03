@@ -175,6 +175,35 @@ class CorePipelineTests(unittest.TestCase):
                 ["thought-20260804-1234.txt"],
             )
 
+    def test_source_scanner_scopes_sidecars_and_duplicate_primary_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            first = root / "first"
+            second = root / "second"
+            first.mkdir()
+            second.mkdir()
+            (first / "capture.m4a").write_bytes(b"first audio")
+            (first / "capture.transcript.txt").write_text("第一份逐字稿", encoding="utf-8")
+            (first / "capture.pdf").write_bytes(b"first attachment")
+            (second / "capture.m4a").write_bytes(b"second audio")
+            (second / "capture.txt").write_text("第二份原始文字", encoding="utf-8")
+
+            groups = SourceScanner([root]).scan()
+
+            self.assertEqual(len(groups), 2)
+            first_group = next(
+                group for group in groups if group.audio[0].read_bytes() == b"first audio"
+            )
+            second_group = next(
+                group for group in groups if group.audio[0].read_bytes() == b"second audio"
+            )
+            self.assertEqual(
+                [path.name for path in first_group.transcript], ["capture.transcript.txt"]
+            )
+            self.assertEqual([path.name for path in first_group.attachments], ["capture.pdf"])
+            self.assertEqual([path.name for path in second_group.raw_text], ["capture.txt"])
+            self.assertNotEqual(first_group.record_id, second_group.record_id)
+
     def test_source_scanner_reports_unavailable_root_instead_of_silently_skipping_it(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             missing = Path(temp) / "missing-inbox"
@@ -381,6 +410,35 @@ stt_timeout = 42
             self.assertIn("本機產生的逐字稿。", content)
             self.assertIn("### 分類", content)
             self.assertTrue(audio.is_file())
+
+    def test_external_transcript_does_not_drop_bridge_owned_transcript(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = root / "inbox"
+            vault = root / "vault"
+            inbox.mkdir()
+            (inbox / "voice.m4a").write_bytes(b"fixture audio")
+            transcriber = FakeTranscriber()
+            pipeline = RecordPipeline(
+                SourceScanner([inbox]),
+                RecordStore(vault),
+                FakeOrganizer(),
+                StateStore(vault / ".bridge" / "state.json"),
+                auto_commit=False,
+                transcriber=transcriber,
+            )
+
+            first = pipeline.scan()[0]
+            self.assertEqual(first["status"], "completed")
+            (inbox / "voice.transcript.txt").write_text("外部逐字稿", encoding="utf-8")
+
+            second = pipeline.scan()[0]
+
+            self.assertEqual(second["status"], "completed")
+            content = Path(second["path"]).read_text(encoding="utf-8")
+            self.assertIn("本機產生的逐字稿。", content)
+            self.assertIn("外部逐字稿", content)
+            self.assertEqual(len(transcriber.calls), 1)
 
     def test_transcription_failure_is_recorded_and_retried(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
