@@ -9,7 +9,7 @@
 - 不依賴作者私有路徑或 repository 內秘密的設定與認證邊界。
 - `capture-only` 與 `collect-and-organize` 的公開介面、來源保留規則與可重試 state。
 - macOS LaunchAgent 的 install、running 狀態檢查、doctor 與 uninstall。
-- 隔離 file-backed E2E、本機 STT adapter 測試與 file-backed pipeline 測試、compile/diff 檢查，以及 Python 3.11、3.12、3.13 的 GitHub Actions；目前本機測試套件共 36 tests。
+- 隔離 file-backed E2E、本機 STT adapter 測試與 file-backed pipeline 測試、compile/diff 檢查，以及 Python 3.11、3.12、3.13 的 GitHub Actions；目前本機測試套件共 37 tests。
 - GitHub Issue/PR 模板與開源維護入口。
 
 ## 已知邊界（不是目前的回歸故障）

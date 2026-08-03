@@ -211,9 +211,15 @@ class SourceScanner:
         found: list[Path] = []
         seen: set[str] = set()
         for root in self.roots:
+            if not root.exists():
+                raise ScannerError(f"source root is unavailable: {root}")
             if not root.is_dir():
-                continue
-            for path in sorted(root.rglob("*"), key=lambda item: str(item)):
+                raise ScannerError(f"source root is not a directory: {root}")
+            try:
+                paths = sorted(root.rglob("*"), key=lambda item: str(item))
+            except OSError as exc:
+                raise ScannerError(f"cannot read source root {root}: {exc}") from exc
+            for path in paths:
                 if not path.is_file() or path.name.lower() in IGNORED_NAMES:
                     continue
                 if "." not in path.name or path.name.startswith("."):

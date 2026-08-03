@@ -15,7 +15,7 @@ from aha_moment_recorder.organization import (
     parse_organization,
 )
 from aha_moment_recorder.pipeline import RecordPipeline
-from aha_moment_recorder.sources import RecordGroup, SourceScanner
+from aha_moment_recorder.sources import RecordGroup, ScannerError, SourceScanner
 from aha_moment_recorder.state import StateStore
 from aha_moment_recorder.storage import RecordStore
 from aha_moment_recorder.transcription import TranscriptionError
@@ -128,6 +128,12 @@ class CorePipelineTests(unittest.TestCase):
             self.assertEqual(later.source_type, "transcript")
             self.assertEqual([path.name for path in later.transcript], ["later.transcript.md"])
             self.assertNotIn("unknown.bin", {path.name for group in groups for path in group.all_sources})
+
+    def test_source_scanner_reports_unavailable_root_instead_of_silently_skipping_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            missing = Path(temp) / "missing-inbox"
+            with self.assertRaisesRegex(ScannerError, "source root is unavailable"):
+                SourceScanner([missing]).scan()
 
     def test_configuration_precedence_and_secret_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
