@@ -43,10 +43,47 @@ class GitCommitter:
             return None
         return Path(result.stdout.strip()).expanduser().resolve()
 
+    def _has_head(self, root: Path) -> bool:
+        """Return whether a worktree already has an initial commit."""
+
+        try:
+            result = self._run(
+                ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return False
+        return result.returncode == 0 and bool(result.stdout.strip())
+
+    def _bootstrap_empty_worktree(self, root: Path) -> None:
+        """Create an empty root commit while leaving the index untouched."""
+
+        result = self._run(
+            [
+                "git",
+                "-C",
+                str(root),
+                "commit",
+                "--allow-empty",
+                "--only",
+                "-m",
+                "chore: initialize record vault",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise GitCommitError("git initial commit failed")
+
     def commit(self, record_path: Path, record_id: str, state_path: Path | None = None) -> str | None:
         root = self._worktree_root()
         if root is None or root != self.vault:
             return None
+        if not self._has_head(root):
+            self._bootstrap_empty_worktree(root)
         try:
             record_relative = Path(record_path).resolve().parent.relative_to(root)
         except ValueError as exc:

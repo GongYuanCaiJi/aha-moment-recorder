@@ -83,6 +83,8 @@ class RecordingGitRunner:
         self.calls.append(args)
         if args[-2:] == ["rev-parse", "--show-toplevel"]:
             return subprocess.CompletedProcess(args, 0, stdout=str(self.root) + "\n", stderr="")
+        if args[-3:] == ["rev-parse", "--verify", "HEAD"]:
+            return subprocess.CompletedProcess(args, 0, stdout="abc123\n", stderr="")
         if "status" in args:
             return subprocess.CompletedProcess(args, 0, stdout="A  records/note-fixture/record.md\n", stderr="")
         if "commit" in args:
@@ -90,6 +92,23 @@ class RecordingGitRunner:
         if args[-2:] == ["rev-parse", "HEAD"]:
             return subprocess.CompletedProcess(args, 0, stdout="abc123\n", stderr="")
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+
+class EmptyRecordingGitRunner(RecordingGitRunner):
+    """Model a fresh Git worktree with no initial commit yet."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.has_head = False
+
+    def __call__(self, args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if args[-3:] == ["rev-parse", "--verify", "HEAD"]:
+            if self.has_head:
+                return subprocess.CompletedProcess(args, 0, stdout="abc123\n", stderr="")
+            return subprocess.CompletedProcess(args, 128, stdout="", stderr="HEAD does not exist")
+        if "commit" in args and "--allow-empty" in args:
+            self.has_head = True
+        return super().__call__(args, **kwargs)
 
 
 class FakeTranscriber:
@@ -513,6 +532,32 @@ stt_timeout = 42
                 ["records/note-fixture", ".bridge/state.json"],
             )
             self.assertEqual(commit, "abc123")
+
+    def test_git_committer_bootstraps_an_empty_worktree_without_committing_other_staged_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            vault = Path(temp) / "vault"
+            vault.mkdir()
+            record = vault / "records/note-fixture/record.md"
+            state = vault / ".bridge/state.json"
+            record.parent.mkdir(parents=True)
+            state.parent.mkdir(parents=True)
+            record.write_text("record", encoding="utf-8")
+            state.write_text("{}", encoding="utf-8")
+            runner = EmptyRecordingGitRunner(vault)
+
+            commit = GitCommitter(vault, runner=runner).commit(record, "note-fixture", state)
+
+            self.assertTrue(commit)
+            bootstrap = next(call for call in runner.calls if "--allow-empty" in call)
+            self.assertIn("--only", bootstrap)
+            record_commit = next(
+                call for call in runner.calls if "commit" in call and "--allow-empty" not in call
+            )
+            self.assertIn("--only", record_commit)
+            self.assertEqual(
+                record_commit[record_commit.index("--") + 1 :],
+                ["records/note-fixture", ".bridge/state.json"],
+            )
 
 
 if __name__ == "__main__":

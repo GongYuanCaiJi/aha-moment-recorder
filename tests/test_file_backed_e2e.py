@@ -77,6 +77,8 @@ class FakeGitRunner:
         self.calls.append(list(args))
         if args[-2:] == ["rev-parse", "--show-toplevel"]:
             return subprocess.CompletedProcess(args, 0, stdout=str(self.root) + "\n", stderr="")
+        if args[-3:] == ["rev-parse", "--verify", "HEAD"]:
+            return subprocess.CompletedProcess(args, 0, stdout="abc123\n", stderr="")
         if "commit" in args:
             if self.commit_failures:
                 self.commit_failures -= 1
