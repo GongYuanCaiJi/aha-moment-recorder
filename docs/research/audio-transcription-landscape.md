@@ -76,7 +76,7 @@ OpenAI 的官方模型頁面把 GPT-4o Transcribe 與 GPT-4o mini Transcribe 標
 | 本案要求 | 現成做法給出的答案 | 本 repo 仍必須守住的界線 |
 |---|---|---|
 | 原始音訊一定保留 | Whisper plugin、VoiceVault、local-whisper-obsidian 都以原始音檔或 Vault attachment 為起點；部分產品只在處理完成後保留 Markdown，不能一概視為符合 | 永不因轉錄／整理成功而刪除或覆寫原音訊；失敗也要留下來源和待處理狀態 |
-| 音訊、逐字稿、整理稿是同一個東西 | Obsidian plugin 的 template 直接在一篇 note 嵌入 audio + transcript；watcher 類方案則用同一個 record id／Markdown 產物串起來 | 不要把原文、逐字稿、AI 結果變成互相獨立、無法關聯的長期真相 |
+| 音訊、逐字稿、整理稿是同一個東西 | Obsidian plugin 的 template 直接在一篇 note 嵌入 audio + transcript；watcher 類方案以音檔和 Markdown 產物建立關聯，但各專案是否有穩定 record id 並不一致 | 不要把原文、逐字稿、AI 結果變成互相獨立、無法關聯的長期真相 |
 | AI 可選，預設可整理，個別可只收錄 | Whisper plugin 有可選 post-processing；Scribe／VoiceVault 也把轉錄與整理分階段 | `processing_mode` 只控制是否跑整理；四個結果仍固定為分類、主題、結構化輸出、摘要，不另加待辦欄位 |
 | 手機快速收錄、Mac 自動處理 | local-whisper-obsidian 的同步資料夾 + watcher、MacWhisper watch folder、TypeWhisper local API 都採這種分工 | Apple Notes／Voice Memos 到同步路徑的具體來源仍要由本機測試確認；不要把 README 當成 iPhone 實際行為證據 |
 | 本地優先、雲端 AI 可選 | whisper.cpp／faster-whisper／VoiceVault／stt-md 都有本機路徑；Whisper plugin、TypeWhisper 也支援相容雲端 provider | 轉錄 provider 必須可替換；把「是否上傳原音」當成明確的設定與紀錄，不要隱式上傳 |
