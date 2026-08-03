@@ -129,6 +129,33 @@ class CorePipelineTests(unittest.TestCase):
             self.assertEqual([path.name for path in later.transcript], ["later.transcript.md"])
             self.assertNotIn("unknown.bin", {path.name for group in groups for path in group.all_sources})
 
+    def test_source_scanner_keeps_independent_natural_inputs_separate(self) -> None:
+        """Different captures must not be joined by a shared filename suffix."""
+
+        with tempfile.TemporaryDirectory() as temp:
+            inbox = Path(temp) / "inbox"
+            inbox.mkdir()
+            (inbox / "voice-20260804-1234.m4a").write_bytes(b"audio")
+            (inbox / "thought-20260804-1234.txt").write_text(
+                "這是另一個自然輸入。", encoding="utf-8"
+            )
+
+            groups = SourceScanner([inbox]).scan()
+
+            self.assertEqual(len(groups), 2)
+            self.assertEqual(
+                {group.record_id for group in groups},
+                {"vm-voice-20260804-1234", "note-thought-20260804-1234"},
+            )
+            self.assertEqual(
+                [path.name for group in groups for path in group.audio],
+                ["voice-20260804-1234.m4a"],
+            )
+            self.assertEqual(
+                [path.name for group in groups for path in group.raw_text],
+                ["thought-20260804-1234.txt"],
+            )
+
     def test_source_scanner_reports_unavailable_root_instead_of_silently_skipping_it(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             missing = Path(temp) / "missing-inbox"

@@ -107,6 +107,12 @@ aha-moment-recorder watch --config "$HOME/.config/aha-moment-recorder/settings.t
 
 `--mode capture-only` 只保存來源，不呼叫 AI；`collect-and-organize` 會保留來源並追加通用整理。`--no-git-commit` 可停用 Vault 為 Git worktree 時的自動 commit。
 
+### 直接輸入文字或語音
+
+你可以像平常一樣各自輸入文字、錄音；不需要替它們手動取同一個檔名，也不需要建立 sidecar。每個獨立來源都會進入自己的 `records/<record-id>/record.md`，保留原始內容，並在開啟整理時各自產生分類、主題、結構化輸出與摘要。
+
+只有兩種情況會合併成同一筆記錄：同名的明確 sidecar（例如 `note.txt` 與 `note.m4a`），或 Apple Notes／Voice Memos adapter 提供的穩定來源識別。程式不會因為檔名最後一段日期或數字相同，就猜測兩個獨立輸入是同一件事；這樣可以避免真人連續輸入時被錯誤合併。若要讓文字和錄音確定屬於同一筆，請在同一則 Apple Note 內收錄，或由來源 adapter 提供穩定識別。
+
 ### 本機語音轉逐字稿
 
 目前的文字整理 endpoint 是 text-only 反代，所以音訊不會直接送給它。預設的音訊路徑是在本機用 `whisper.cpp` 轉成逐字稿，再把逐字稿和原始音訊放進同一筆記錄，最後只把文字交給既有的 `gpt-5.6-luna` 文字整理 endpoint。原始音訊不會離開這台 Mac。

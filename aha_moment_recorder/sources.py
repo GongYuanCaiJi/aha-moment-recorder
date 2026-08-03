@@ -170,10 +170,6 @@ def normalize_key(path: Path) -> str:
     return path.stem.lower()
 
 
-def short_token(value: str) -> str:
-    return value.rsplit("-", 1)[-1].lower()
-
-
 def is_transcript(path: Path) -> bool:
     name = path.name.lower()
     return any(name.endswith(suffix) for suffix in TRANSCRIPT_SUFFIXES)
@@ -249,7 +245,6 @@ class SourceScanner:
     @staticmethod
     def _register_aliases(aliases: dict[str, str], path: Path, group_key: str) -> None:
         values = {normalize_key(path), path.stem.lower()}
-        values.update({short_token(value) for value in tuple(values) if value})
         for value in values:
             if value:
                 aliases.setdefault(value, group_key)
@@ -258,7 +253,7 @@ class SourceScanner:
     def _find_group(aliases: Mapping[str, str], path: Path) -> str | None:
         values = (normalize_key(path), path.stem.lower())
         for value in values:
-            group_key = aliases.get(value) or aliases.get(short_token(value))
+            group_key = aliases.get(value)
             if group_key:
                 return group_key
         return None

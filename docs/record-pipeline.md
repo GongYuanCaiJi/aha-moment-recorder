@@ -2,7 +2,7 @@
 
 `aha_moment_recorder` 將來源掃描、記錄保存、AI 整理、state 與 Git 拆成可替換
 的 public modules。最高外部 seam 是 `RecordPipeline.process(group)`；每一個
-`RecordGroup` 對應一個 `records/<record-id>/`。
+`RecordGroup` 對應一個 `records/<record-id>/`。文字與音訊可以像真人一樣分開輸入；不同檔名的獨立來源會各自形成一筆記錄，不需要手動準備同名檔案。只有明確同名 sidecar 或來源 adapter 提供穩定識別時才會合併，避免日期／流水號相同造成誤合併。
 
 ## Public modules
 

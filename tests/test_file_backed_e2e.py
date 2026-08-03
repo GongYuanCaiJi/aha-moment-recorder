@@ -7,7 +7,15 @@ import unittest
 from pathlib import Path
 from typing import Any, Mapping
 
-from aha_moment_recorder import Settings, pipeline_from_settings
+from aha_moment_recorder import (
+    OpenAICompatibleOrganizer,
+    RecordPipeline,
+    RecordStore,
+    Settings,
+    SourceScanner,
+    StateStore,
+    pipeline_from_settings,
+)
 
 
 class FakeOpenAITransport:
@@ -82,6 +90,17 @@ class FakeGitRunner:
                 stderr="",
             )
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+
+class FakeTranscriber:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Path, Path]] = []
+
+    def transcribe(self, audio_path: Path, output_path: Path) -> str:
+        self.calls.append((audio_path, output_path))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("自然語音的逐字稿。", encoding="utf-8")
+        return "自然語音的逐字稿。"
 
 
 class FileBackedEndToEndTests(unittest.TestCase):
@@ -229,6 +248,62 @@ class FileBackedEndToEndTests(unittest.TestCase):
                 Path(error_result["path"]).read_text(encoding="utf-8"),
             )
             self.assertEqual(len(transport.requests), 4)
+
+    def test_natural_text_and_audio_inputs_route_to_separate_records_without_sidecars(self) -> None:
+        """A human can type and speak independently; neither input needs a paired filename."""
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = root / "inbox"
+            vault = root / "vault"
+            inbox.mkdir()
+            (inbox / "voice-20260804-1234.m4a").write_bytes(b"audio from a human capture")
+            (inbox / "thought-20260804-1234.txt").write_text(
+                "文字輸入應該進入自己的記錄。", encoding="utf-8"
+            )
+
+            transport = FakeOpenAITransport()
+            transcriber = FakeTranscriber()
+            organizer = OpenAICompatibleOrganizer(
+                "https://fake.example/v1",
+                "fixture-model",
+                api_key="fixture-key",
+                transport=transport,
+            )
+            pipeline = RecordPipeline(
+                SourceScanner([inbox]),
+                RecordStore(vault),
+                organizer,
+                StateStore(vault / ".bridge" / "state.json"),
+                auto_commit=False,
+                transcriber=transcriber,
+            )
+
+            first = pipeline.scan()
+
+            self.assertEqual(
+                {item["record_id"] for item in first},
+                {"vm-voice-20260804-1234", "note-thought-20260804-1234"},
+            )
+            self.assertTrue(all(item["status"] == "completed" for item in first))
+            self.assertEqual(len(transport.requests), 2)
+            self.assertEqual(len(transcriber.calls), 1)
+
+            voice_record = vault / "records/vm-voice-20260804-1234/record.md"
+            text_record = vault / "records/note-thought-20260804-1234/record.md"
+            voice_content = voice_record.read_text(encoding="utf-8")
+            text_content = text_record.read_text(encoding="utf-8")
+            self.assertIn("### 原始音訊", voice_content)
+            self.assertIn("自然語音的逐字稿。", voice_content)
+            self.assertIn("### 分類", voice_content)
+            self.assertIn("文字輸入應該進入自己的記錄。", text_content)
+            self.assertIn("### 分類", text_content)
+            self.assertNotIn("### 原始音訊", text_content)
+
+            second = pipeline.scan()
+            self.assertTrue(all(item["status"] == "unchanged" for item in second))
+            self.assertEqual(len(transport.requests), 2)
+            self.assertEqual(len(transcriber.calls), 1)
 
 
 if __name__ == "__main__":

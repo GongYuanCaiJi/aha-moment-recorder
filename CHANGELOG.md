@@ -7,6 +7,7 @@
 - 加入可插拔的本機 `WhisperCppTranscriber`：m4a 先在本機轉成逐字稿，再交給既有文字整理 endpoint。
 - 自動把原始音訊、逐字稿與四欄位 AI 整理保留在同一筆記錄；轉錄失敗會保留原始音訊並可重試。
 - CLI `doctor`、設定檔與 LaunchAgent 支援本機 STT command、model、language 與 timeout。
+- 自然輸入路由不再用檔名最後一段 token 猜測關聯；不同檔名的文字與語音會各自保存、分類，避免獨立輸入被誤合併。
 
 ## 0.1.0（pre-release baseline，2026-08-02）
 
