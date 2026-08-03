@@ -19,7 +19,7 @@
 reader、時鐘與 Git runner 都能由測試注入；沒有任何作者本機路徑或秘密需要
 寫入 repo。
 
-若設定 `stt_model` 且 `auto_transcribe = true`，音訊會在同一筆記錄的
+若設定 `stt_model`、`stt_command`、`stt_ffmpeg_command` 且 `auto_transcribe = true`，音訊會在同一筆記錄的
 `attachments/transcript-01.txt` 產生逐字稿；下一次掃描會透過 state 與來源簽章
 保持冪等。原始音訊、來源文字與逐字稿都不會被 AI 整理取代。
 

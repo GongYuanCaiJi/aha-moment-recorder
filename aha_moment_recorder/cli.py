@@ -48,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--retry-ai", action="store_true", default=None)
     parser.add_argument("--no-transcribe", action="store_true", default=None)
     parser.add_argument("--stt-command")
+    parser.add_argument("--stt-ffmpeg-command")
     parser.add_argument("--stt-model", type=Path)
     parser.add_argument("--stt-language")
     parser.add_argument("--stt-timeout", type=float)
@@ -120,6 +121,8 @@ def _doctor(
             "auto_transcribe": settings.auto_transcribe,
             "command": settings.stt_command,
             "command_available": bool(shutil.which(settings.stt_command)),
+            "ffmpeg_command": settings.stt_ffmpeg_command,
+            "ffmpeg_available": bool(shutil.which(settings.stt_ffmpeg_command)),
             "model": str(settings.stt_model) if settings.stt_model else None,
             "model_exists": bool(settings.stt_model and settings.stt_model.is_file()),
             "language": settings.stt_language,
@@ -143,7 +146,12 @@ def _doctor(
     healthy = checks["vault"]["exists"] and all(item["exists"] for item in source_checks)
     transcription = checks["transcription"]
     if transcription["enabled"]:
-        healthy = healthy and bool(transcription["command_available"]) and bool(transcription["model_exists"])
+        healthy = (
+            healthy
+            and bool(transcription["command_available"])
+            and bool(transcription["ffmpeg_available"])
+            and bool(transcription["model_exists"])
+        )
     agent = checks.get("launch_agent")
     if isinstance(agent, dict) and agent.get("configured"):
         healthy = (
@@ -227,6 +235,8 @@ def _agent_command(settings: Settings) -> list[str]:
             command.append("--no-transcribe")
         if settings.stt_command != "whisper-cli":
             command.extend(["--stt-command", settings.stt_command])
+        if settings.stt_ffmpeg_command != "ffmpeg":
+            command.extend(["--stt-ffmpeg-command", settings.stt_ffmpeg_command])
         if settings.stt_model is not None:
             command.extend(["--stt-model", str(settings.stt_model)])
         if settings.stt_language != "zh":

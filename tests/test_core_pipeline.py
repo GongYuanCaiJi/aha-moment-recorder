@@ -144,6 +144,7 @@ model = "config-model"
 mode = "capture-only"
 auto_transcribe = true
 stt_command = "fixture-whisper"
+stt_ffmpeg_command = "fixture-ffmpeg"
 stt_model = "models/ggml-small.bin"
 stt_language = "zh"
 stt_timeout = 42
@@ -178,6 +179,7 @@ stt_timeout = 42
             self.assertEqual(settings.api_key, "fixture-key")
             self.assertTrue(settings.auto_transcribe)
             self.assertEqual(settings.stt_command, "fixture-whisper")
+            self.assertEqual(settings.stt_ffmpeg_command, "fixture-ffmpeg")
             self.assertEqual(settings.stt_model, (root / "models/ggml-small.bin").resolve())
             self.assertEqual(settings.stt_timeout, 42)
 

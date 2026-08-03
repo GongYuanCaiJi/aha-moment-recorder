@@ -17,6 +17,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility diag
 DEFAULT_ENDPOINT = "http://127.0.0.1:8317/v1"
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_STT_COMMAND = "whisper-cli"
+DEFAULT_STT_FFMPEG_COMMAND = "ffmpeg"
 DEFAULT_STT_LANGUAGE = "zh"
 DEFAULT_STT_TIMEOUT = 300.0
 CAPTURE_ONLY = "capture-only"
@@ -51,6 +52,7 @@ class Settings:
     config_path: Path | None = None
     auto_transcribe: bool = True
     stt_command: str = DEFAULT_STT_COMMAND
+    stt_ffmpeg_command: str = DEFAULT_STT_FFMPEG_COMMAND
     stt_model: Path | None = None
     stt_language: str = DEFAULT_STT_LANGUAGE
     stt_timeout: float = DEFAULT_STT_TIMEOUT
@@ -70,6 +72,8 @@ class Settings:
             raise ConfigError("timeout must be greater than zero")
         if not self.stt_command.strip():
             raise ConfigError("stt_command must not be empty")
+        if not self.stt_ffmpeg_command.strip():
+            raise ConfigError("stt_ffmpeg_command must not be empty")
         if not self.stt_language.strip():
             raise ConfigError("stt_language must not be empty")
         if self.stt_timeout <= 0:
@@ -291,6 +295,13 @@ def load_settings(
     stt_command = str(
         choose("stt_command", env_names=("STT_COMMAND",), default=DEFAULT_STT_COMMAND)
     )
+    stt_ffmpeg_command = str(
+        choose(
+            "stt_ffmpeg_command",
+            env_names=("STT_FFMPEG_COMMAND",),
+            default=DEFAULT_STT_FFMPEG_COMMAND,
+        )
+    )
     stt_model_value = choose(
         "stt_model",
         env_names=("STT_MODEL", "TRANSCRIBER_MODEL"),
@@ -371,6 +382,7 @@ def load_settings(
         config_path=config_file,
         auto_transcribe=auto_transcribe,
         stt_command=stt_command,
+        stt_ffmpeg_command=stt_ffmpeg_command,
         stt_model=stt_model,
         stt_language=stt_language,
         stt_timeout=stt_timeout,
@@ -406,6 +418,7 @@ def write_config(path: Path | str, settings: Settings, *, overwrite: bool = Fals
         f"dry_run = {str(settings.dry_run).lower()}",
         f"auto_transcribe = {str(settings.auto_transcribe).lower()}",
         f"stt_command = {quote(settings.stt_command)}",
+        f"stt_ffmpeg_command = {quote(settings.stt_ffmpeg_command)}",
         f"stt_language = {quote(settings.stt_language)}",
         f"stt_timeout = {settings.stt_timeout:g}",
     ]

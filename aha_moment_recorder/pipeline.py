@@ -318,6 +318,7 @@ def pipeline_from_settings(
         WhisperCppTranscriber(
             settings.stt_model,
             command=settings.stt_command,
+            ffmpeg_command=settings.stt_ffmpeg_command,
             language=settings.stt_language,
             timeout=settings.stt_timeout,
         )

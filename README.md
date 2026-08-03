@@ -59,7 +59,8 @@ auto_commit = true
 retry_ai = false
 dry_run = false
 auto_transcribe = true
-stt_command = "whisper-cli"
+stt_command = "/opt/homebrew/bin/whisper-cli"
+stt_ffmpeg_command = "/opt/homebrew/bin/ffmpeg"
 stt_model = "/Users/you/.cache/aha-moment-recorder/models/whisper/ggml-small.bin"
 stt_language = "zh"
 stt_timeout = 300
@@ -119,7 +120,7 @@ curl -L --fail --output "$HOME/.cache/aha-moment-recorder/models/whisper/ggml-sm
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
 ```
 
-把 `stt_model` 設成模型的絕對路徑後，`watch` 會自動處理新音訊；既有音訊在下一次掃描時也會補上逐字稿。若要只收錄某一輪，可加 `--no-transcribe`；若只想停用預設背景轉錄，設定 `auto_transcribe = false`。`doctor` 的 `transcription` 區塊會檢查 `whisper-cli` 與模型是否真的存在。
+把 `stt_model`、`stt_command` 與 `stt_ffmpeg_command` 設成絕對路徑後，`watch` 會自動處理新音訊；既有音訊在下一次掃描時也會補上逐字稿。LaunchAgent 的預設 `PATH` 很精簡，不能假設 Homebrew 會自動在 PATH 裡。若要只收錄某一輪，可加 `--no-transcribe`；若只想停用預設背景轉錄，設定 `auto_transcribe = false`。`doctor` 的 `transcription` 區塊會檢查轉錄 command 與模型是否真的存在。
 
 ## macOS LaunchAgent
 
