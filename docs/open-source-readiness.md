@@ -6,10 +6,11 @@
 
 - MIT license、README、貢獻指南、安全政策與行為準則。
 - 可從 checkout 安裝的 Python package 與 CLI。
+- 已從 GitHub 的 `agent/define-ai-output` 做 fresh clone，完成 package install、`doctor`、capture-only `run`、40 tests、compile 與 diff check。
 - 不依賴作者私有路徑或 repository 內秘密的設定與認證邊界。
 - `capture-only` 與 `collect-and-organize` 的公開介面、來源保留規則與可重試 state。
 - macOS LaunchAgent 的 install、running 狀態檢查、doctor 與 uninstall。
-- 隔離 file-backed E2E、本機 STT adapter 測試與 file-backed pipeline 測試、compile/diff 檢查，以及 Python 3.11、3.12、3.13 的 GitHub Actions；目前本機測試套件共 37 tests。
+- 隔離 file-backed E2E、本機 STT adapter 測試與 file-backed pipeline 測試、compile/diff 檢查，以及 Python 3.11、3.12、3.13 的 GitHub Actions；目前本機測試套件共 40 tests。
 - GitHub Issue/PR 模板與開源維護入口。
 
 ## 已知邊界（不是目前的回歸故障）
@@ -26,7 +27,7 @@
 
 ## 目前 GitHub 分支狀態
 
-完整開源準備內容目前在 `agent/define-ai-output`，並由 [draft PR #14](https://github.com/GongYuanCaiJi/aha-moment-recorder/pull/14) 對應到現有 default branch。由於本機安全規則禁止未經人工 review 直接 push 到 `main`，default branch 尚未切換；在 PR 合併、default branch 整理與 fresh clone 再驗證前，不應把 repository visibility 改為 public。
+完整開源準備內容目前在 `agent/define-ai-output`（HEAD `b81ed9e`），並由 [PR #14](https://github.com/GongYuanCaiJi/aha-moment-recorder/pull/14) 對應到現有 default branch `agent/wayfinder-bootstrap`。PR 目前不是 draft，但仍需完成 review／merge 與 default branch 整理；在這些步驟完成前，不應把 repository visibility 改為 public。
 
 ## 公開前檢查
 
