@@ -1,0 +1,32 @@
+name: 提議功能
+description: 提出與目前 scope 相符、可驗收的新功能
+title: "[Feature] "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        請先確認提議不會把原始資料、隱私邊界或可替換 adapter 的責任混在一起。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解決的問題
+      description: 誰遇到什麼問題？目前的替代方案是什麼？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提議方案
+      description: 描述預期行為，不需要先指定實作細節。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 驗收條件
+      description: 列出可以由測試或明確操作驗證的結果。
+    validations:
+      required: true
