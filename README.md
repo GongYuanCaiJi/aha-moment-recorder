@@ -67,6 +67,8 @@ include_deleted_notes = false
 
 Apple Notes 的資料庫受 macOS 隱私權保護。若終端機可以讀取、但 LaunchAgent 的 `doctor` 顯示匯入延後，請在「系統設定 → 隱私權與安全性 → 完整磁碟取用」允許執行該 virtualenv 的 Python；這是 macOS 的一次性權限，不是程式繞過權限。沒有這項權限時，Voice Memos 與其他來源仍會繼續處理，Apple Notes 會在下一輪重試。
 
+目前的實作與剩餘工作以 GitHub Tickets 追蹤：[#26 既有 Apple Notes 匯入](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/26)、[#27 背景服務](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/27)、[#28 AI 重試](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/28)、[#29 純音訊轉錄](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/29)、[#30 macOS 權限](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/30)。
+
 不要把 `api_key` 寫入 TOML。可用環境變數：
 
 ```sh
