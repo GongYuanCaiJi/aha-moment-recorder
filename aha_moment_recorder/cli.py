@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float)
     parser.add_argument("--no-git-commit", action="store_true", default=None)
     parser.add_argument("--retry-ai", action="store_true", default=None)
+    parser.add_argument("--no-transcribe", action="store_true", default=None)
+    parser.add_argument("--stt-command")
+    parser.add_argument("--stt-model", type=Path)
+    parser.add_argument("--stt-language")
+    parser.add_argument("--stt-timeout", type=float)
     parser.add_argument("--dry-run", action="store_true", default=None)
     parser.add_argument("--watch", action="store_true", default=None)
     parser.add_argument("--interval", type=float, default=15.0)
@@ -109,6 +115,15 @@ def _doctor(
             "parser_available": AppleNotesScanner.dependency_available(),
             "include_deleted": settings.include_deleted_notes,
         },
+        "transcription": {
+            "enabled": bool(settings.auto_transcribe and settings.stt_model),
+            "auto_transcribe": settings.auto_transcribe,
+            "command": settings.stt_command,
+            "command_available": bool(shutil.which(settings.stt_command)),
+            "model": str(settings.stt_model) if settings.stt_model else None,
+            "model_exists": bool(settings.stt_model and settings.stt_model.is_file()),
+            "language": settings.stt_language,
+        },
     }
     actual_platform = sys.platform if platform is None else platform
     if actual_platform == "darwin":
@@ -126,6 +141,9 @@ def _doctor(
         checks["launch_agent"] = agent
     print(json.dumps(checks, ensure_ascii=False, indent=2))
     healthy = checks["vault"]["exists"] and all(item["exists"] for item in source_checks)
+    transcription = checks["transcription"]
+    if transcription["enabled"]:
+        healthy = healthy and bool(transcription["command_available"]) and bool(transcription["model_exists"])
     agent = checks.get("launch_agent")
     if isinstance(agent, dict) and agent.get("configured"):
         healthy = (
@@ -205,6 +223,16 @@ def _agent_command(settings: Settings) -> list[str]:
             command.append("--no-git-commit")
         if settings.retry_ai:
             command.append("--retry-ai")
+        if not settings.auto_transcribe:
+            command.append("--no-transcribe")
+        if settings.stt_command != "whisper-cli":
+            command.extend(["--stt-command", settings.stt_command])
+        if settings.stt_model is not None:
+            command.extend(["--stt-model", str(settings.stt_model)])
+        if settings.stt_language != "zh":
+            command.extend(["--stt-language", settings.stt_language])
+        if settings.stt_timeout != 300.0:
+            command.extend(["--stt-timeout", str(settings.stt_timeout)])
         if settings.dry_run:
             command.append("--dry-run")
     return command

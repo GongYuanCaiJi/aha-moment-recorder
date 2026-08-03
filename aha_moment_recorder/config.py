@@ -16,6 +16,9 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility diag
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:8317/v1"
 DEFAULT_MODEL = "gpt-5.6-luna"
+DEFAULT_STT_COMMAND = "whisper-cli"
+DEFAULT_STT_LANGUAGE = "zh"
+DEFAULT_STT_TIMEOUT = 300.0
 CAPTURE_ONLY = "capture-only"
 COLLECT_AND_ORGANIZE = "collect-and-organize"
 ProcessingMode = Literal["capture-only", "collect-and-organize"]
@@ -46,6 +49,11 @@ class Settings:
     apple_notes_database: Path | None = None
     include_deleted_notes: bool = False
     config_path: Path | None = None
+    auto_transcribe: bool = True
+    stt_command: str = DEFAULT_STT_COMMAND
+    stt_model: Path | None = None
+    stt_language: str = DEFAULT_STT_LANGUAGE
+    stt_timeout: float = DEFAULT_STT_TIMEOUT
 
     @property
     def proxy_url(self) -> str:
@@ -60,6 +68,12 @@ class Settings:
             raise ConfigError("endpoint must not be empty")
         if self.timeout <= 0:
             raise ConfigError("timeout must be greater than zero")
+        if not self.stt_command.strip():
+            raise ConfigError("stt_command must not be empty")
+        if not self.stt_language.strip():
+            raise ConfigError("stt_language must not be empty")
+        if self.stt_timeout <= 0:
+            raise ConfigError("stt_timeout must be greater than zero")
 
 
 def _default_sources() -> tuple[Path, ...]:
@@ -269,6 +283,34 @@ def load_settings(
         auto_commit = _bool(choose("auto_commit", default=True), name="auto_commit")
     retry_ai = _bool(choose("retry_ai", default=False), name="retry_ai")
     dry_run = _bool(choose("dry_run", default=False), name="dry_run")
+    auto_transcribe = (
+        False
+        if command_line.get("no_transcribe") is True
+        else _bool(choose("auto_transcribe", default=True), name="auto_transcribe")
+    )
+    stt_command = str(
+        choose("stt_command", env_names=("STT_COMMAND",), default=DEFAULT_STT_COMMAND)
+    )
+    stt_model_value = choose(
+        "stt_model",
+        env_names=("STT_MODEL", "TRANSCRIBER_MODEL"),
+        default=None,
+    )
+    stt_model = (
+        _path(stt_model_value, base=value_base("stt_model"))
+        if stt_model_value
+        else None
+    )
+    stt_language = str(
+        choose("stt_language", env_names=("STT_LANGUAGE",), default=DEFAULT_STT_LANGUAGE)
+    )
+    stt_timeout_value = choose(
+        "stt_timeout", env_names=("STT_TIMEOUT",), default=DEFAULT_STT_TIMEOUT
+    )
+    try:
+        stt_timeout = float(stt_timeout_value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError("stt_timeout must be a number") from exc
 
     api_key_file_value = choose("api_key_file", default=None)
     api_key_file = (
@@ -327,6 +369,11 @@ def load_settings(
         apple_notes_database=apple_notes_database,
         include_deleted_notes=include_deleted_notes,
         config_path=config_file,
+        auto_transcribe=auto_transcribe,
+        stt_command=stt_command,
+        stt_model=stt_model,
+        stt_language=stt_language,
+        stt_timeout=stt_timeout,
     )
 
 
@@ -357,7 +404,13 @@ def write_config(path: Path | str, settings: Settings, *, overwrite: bool = Fals
         f"auto_commit = {str(settings.auto_commit).lower()}",
         f"retry_ai = {str(settings.retry_ai).lower()}",
         f"dry_run = {str(settings.dry_run).lower()}",
+        f"auto_transcribe = {str(settings.auto_transcribe).lower()}",
+        f"stt_command = {quote(settings.stt_command)}",
+        f"stt_language = {quote(settings.stt_language)}",
+        f"stt_timeout = {settings.stt_timeout:g}",
     ]
+    if settings.stt_model is not None:
+        lines.append(f"stt_model = {quote(settings.stt_model)}")
     if settings.api_key_file is not None:
         lines.append(f"api_key_file = {quote(settings.api_key_file)}")
     if settings.apple_notes_database is not None:

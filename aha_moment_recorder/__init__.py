@@ -15,6 +15,7 @@ from .pipeline import RecordPipeline, pipeline_from_settings
 from .sources import RecordGroup, SourceMetadata, SourceScanner, source_signature
 from .state import StateStore
 from .storage import RecordStore
+from .transcription import Transcriber, TranscriptionError, WhisperCppTranscriber
 
 __all__ = [
     "ConfigError",
@@ -36,6 +37,9 @@ __all__ = [
     "SourceMetadata",
     "SourceScanner",
     "StateStore",
+    "Transcriber",
+    "TranscriptionError",
+    "WhisperCppTranscriber",
     "load_settings",
     "parse_organization",
     "pipeline_from_settings",

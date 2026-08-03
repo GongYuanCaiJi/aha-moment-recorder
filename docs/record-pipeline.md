@@ -10,6 +10,7 @@
 - `sources.py`：`SourceScanner`、`RecordGroup`，處理文字、音訊、逐字稿與附件。
 - `storage.py`：`RecordStore`，以 atomic write/copy 保存來源，AI 只能替換標記區塊。
 - `organization.py`：`Organization` 與 `OpenAICompatibleOrganizer`；回應必須恰好包含 `classification`、`topic`、`structured_output`、`summary`。
+- `transcription.py`：`Transcriber` 與 `WhisperCppTranscriber`；以本機 `ffmpeg`／`whisper-cli` 將 m4a 轉為逐字稿，不把音訊送進文字反代。
 - `state.py`：`StateStore`，保存可讀 JSON 並支援 commit pending retry。
 - `git_adapter.py`：`GitCommitter`，以注入的 runner 執行 path-scoped Git commands。
 - `pipeline.py`：`RecordPipeline` 與 `pipeline_from_settings()`。
@@ -17,6 +18,10 @@
 所有 runtime dependencies 都來自 Python standard library。HTTP、認證、metadata
 reader、時鐘與 Git runner 都能由測試注入；沒有任何作者本機路徑或秘密需要
 寫入 repo。
+
+若設定 `stt_model` 且 `auto_transcribe = true`，音訊會在同一筆記錄的
+`attachments/transcript-01.txt` 產生逐字稿；下一次掃描會透過 state 與來源簽章
+保持冪等。原始音訊、來源文字與逐字稿都不會被 AI 整理取代。
 
 ## CLI
 

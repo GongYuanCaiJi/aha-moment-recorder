@@ -117,6 +117,36 @@ class RecordStore:
     def record_path(self, group: RecordGroup) -> Path:
         return self.vault / "records" / group.record_id / "record.md"
 
+    def generated_transcript_paths(self, group: RecordGroup) -> list[Path]:
+        """Return transcripts generated inside the record, if any.
+
+        Voice Memos and iCloud folders should remain source-owned and
+        read-only from the bridge's point of view.  Generated transcripts live
+        beside the copied raw audio in the record directory instead.  On the
+        next scan they are attached back to the group before signatures and
+        idempotency checks are calculated.
+        """
+
+        return [
+            self.generated_transcript_path(group, index)
+            for index in range(1, len(group.audio) + 1)
+            if self.generated_transcript_path(group, index).is_file()
+        ]
+
+    def generated_transcript_path(self, group: RecordGroup, index: int) -> Path:
+        """Return the bridge-owned transcript destination for one audio file."""
+
+        return self.record_path(group).parent / "attachments" / f"transcript-{index:02d}.txt"
+
+    def attach_generated_transcripts(self, group: RecordGroup) -> None:
+        """Attach bridge-owned transcripts without mutating source folders."""
+
+        if group.transcript:
+            return
+        for path in self.generated_transcript_paths(group):
+            if path not in group.transcript:
+                group.transcript.append(path)
+
     def read(self, group: RecordGroup) -> str | None:
         path = self.record_path(group)
         if not path.is_file():

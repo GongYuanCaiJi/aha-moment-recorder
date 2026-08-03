@@ -9,7 +9,7 @@
 - 不依賴作者私有路徑或 repository 內秘密的設定與認證邊界。
 - `capture-only` 與 `collect-and-organize` 的公開介面、來源保留規則與可重試 state。
 - macOS LaunchAgent 的 install、running 狀態檢查、doctor 與 uninstall。
-- 隔離 file-backed E2E、26 個 unittest、compile/diff 檢查，以及 Python 3.11、3.12、3.13 的 GitHub Actions。
+- 隔離 file-backed E2E、本機 STT adapter 測試與 file-backed pipeline 測試、compile/diff 檢查，以及 Python 3.11、3.12、3.13 的 GitHub Actions；目前本機測試套件共 36 tests。
 - GitHub Issue/PR 模板與開源維護入口。
 
 ## 已知邊界（不是目前的回歸故障）
@@ -17,7 +17,7 @@
 以下是刻意未包含在目前核心範圍內的工作：
 
 - 不提供行動端 App 或特定外部筆記／錄音資料庫的原生匯入 adapter；來源檔案需要先進入設定的 source inbox。
-- 不在本 repo 內實作語音轉寫 provider；逐字稿可由其他工具產生後作為 sidecar 收錄。
+- 不在本 repo 內提供雲端語音服務；預設的 `WhisperCppTranscriber` 只呼叫使用者本機安裝的 `whisper-cli`，也保留可注入其他 Transcriber 的介面。
 - 不提供自有雲端同步、備份服務或第二裝置的實機驗收。
 - 不承諾特定 AI provider 的模型品質；只驗證 OpenAI-compatible transport 與四欄位結果契約。
 - 搜尋、回顧、向量索引、多人協作與其他產品級功能仍是後續範圍。

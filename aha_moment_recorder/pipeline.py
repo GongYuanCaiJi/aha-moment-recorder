@@ -13,6 +13,7 @@ from .organization import Organization, OrganizationError, OpenAICompatibleOrgan
 from .sources import CompositeScanner, MetadataReader, RecordGroup, Scanner, SourceScanner, source_signature
 from .state import StateStore, utc_now
 from .storage import RecordStore, extract_frontmatter
+from .transcription import Transcriber, TranscriptionError, WhisperCppTranscriber
 
 
 class Organizer(Protocol):
@@ -34,6 +35,8 @@ class RecordPipeline:
         auto_commit: bool = True,
         retry_ai: bool = False,
         dry_run: bool = False,
+        transcriber: Transcriber | None = None,
+        auto_transcribe: bool = True,
     ) -> None:
         self.scanner = scanner
         self.store = store
@@ -44,8 +47,52 @@ class RecordPipeline:
         self.auto_commit = auto_commit
         self.retry_ai = retry_ai
         self.dry_run = dry_run
+        self.transcriber = transcriber
+        self.auto_transcribe = auto_transcribe
+
+    def _has_source_transcript(self, group: RecordGroup) -> bool:
+        record_root = self.store.record_path(group).parent.resolve()
+        return any(
+            record_root not in path.expanduser().resolve().parents
+            for path in group.transcript
+        )
+
+    def _missing_transcription_indexes(self, group: RecordGroup) -> list[int]:
+        return [
+            index
+            for index in range(1, len(group.audio) + 1)
+            if not self.store.generated_transcript_path(group, index).is_file()
+        ]
+
+    def _transcribe_missing(self, group: RecordGroup) -> None:
+        if self.transcriber is None or not self.auto_transcribe or not group.audio:
+            return
+        if self._has_source_transcript(group):
+            return
+        for index, audio_path in enumerate(group.audio, start=1):
+            destination = self.store.generated_transcript_path(group, index)
+            if destination.is_file():
+                if destination not in group.transcript:
+                    group.transcript.append(destination)
+                continue
+            text = self.transcriber.transcribe(audio_path, destination)
+            if not text.strip():
+                raise TranscriptionError("transcription returned empty text")
+            if not destination.is_file():
+                raise TranscriptionError(
+                    f"transcriber did not write the transcript: {destination}"
+                )
+            group.transcript.append(destination)
 
     def process(self, group: RecordGroup) -> dict[str, Any]:
+        self.store.attach_generated_transcripts(group)
+        needs_transcription = bool(
+            self.transcriber is not None
+            and self.auto_transcribe
+            and group.audio
+            and not self._has_source_transcript(group)
+            and bool(self._missing_transcription_indexes(group))
+        )
         try:
             signature = source_signature(group)
         except OSError as exc:
@@ -70,6 +117,7 @@ class RecordPipeline:
             and previous.get("signature") == signature
             and previous.get("processing_mode", self.mode) == effective_mode
             and not self.retry_ai
+            and not needs_transcription
         ):
             if self.committer is None or not self.auto_commit:
                 return {
@@ -106,13 +154,33 @@ class RecordPipeline:
             and previous.get("status") != "error"
             and not self.retry_ai
             and not previous.get("commit_pending")
+            and not needs_transcription
         ):
             return {"record_id": group.record_id, "status": "unchanged"}
 
+        transcription_error: str | None = None
         try:
             if not self.dry_run:
                 self.store.copy_sources(group)
+                if needs_transcription:
+                    self._transcribe_missing(group)
+                    signature = source_signature(group)
+                    # The generated transcript is already in the destination,
+                    # but this keeps the copy operation idempotent for custom
+                    # transcribers that write elsewhere.
+                    self.store.copy_sources(group)
             raw_text, transcript = self.store.raw_content(group)
+        except TranscriptionError as exc:
+            transcription_error = str(exc)
+            signature = source_signature(group)
+            try:
+                raw_text, transcript = self.store.raw_content(group)
+            except OSError as source_exc:
+                return {
+                    "record_id": group.record_id,
+                    "status": "deferred",
+                    "error": f"source changed while reading: {str(source_exc)[:120]}",
+                }
         except OSError as exc:
             return {
                 "record_id": group.record_id,
@@ -123,7 +191,11 @@ class RecordPipeline:
         ai_error: str | None = None
         organization: Organization | None = None
 
-        if effective_mode != CAPTURE_ONLY and (raw_text or transcript):
+        if transcription_error:
+            ai_error = f"transcription failed: {transcription_error}"
+            if effective_mode != CAPTURE_ONLY:
+                ai_status = "error"
+        elif effective_mode != CAPTURE_ONLY and (raw_text or transcript):
             if not self.dry_run:
                 if self.organizer is None:
                     ai_status = "error"
@@ -151,7 +223,7 @@ class RecordPipeline:
             if organization is not None:
                 self.store.update_organization(record_path, organization)
 
-        state_status = "error" if ai_error and ai_status == "error" else ai_status
+        state_status = "error" if transcription_error or (ai_error and ai_status == "error") else ai_status
         self.state.set(
             group.record_id,
             {
@@ -182,12 +254,14 @@ class RecordPipeline:
                     "path": str(record_path),
                 }
 
+        result_status = "error" if transcription_error else ai_status
         return {
             "record_id": group.record_id,
-            "status": ai_status,
+            "status": result_status,
             "sources": len(group.all_sources),
             "audio": len(group.audio),
             "transcript": bool(transcript),
+            "transcription": "error" if transcription_error else ("completed" if transcript else "pending"),
             "commit": commit,
             "path": str(record_path),
             **({"error": ai_error} if ai_error else {}),
@@ -240,6 +314,16 @@ def pipeline_from_settings(
         timeout=settings.timeout,
         transport=transport,
     )
+    transcriber = (
+        WhisperCppTranscriber(
+            settings.stt_model,
+            command=settings.stt_command,
+            language=settings.stt_language,
+            timeout=settings.stt_timeout,
+        )
+        if settings.auto_transcribe and settings.stt_model is not None
+        else None
+    )
     committer = GitCommitter(settings.vault, runner=git_runner)
     return RecordPipeline(
         scanner,
@@ -251,4 +335,6 @@ def pipeline_from_settings(
         auto_commit=settings.auto_commit,
         retry_ai=settings.retry_ai,
         dry_run=settings.dry_run,
+        transcriber=transcriber,
+        auto_transcribe=settings.auto_transcribe,
     )

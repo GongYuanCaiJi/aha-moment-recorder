@@ -58,6 +58,11 @@ timeout = 120
 auto_commit = true
 retry_ai = false
 dry_run = false
+auto_transcribe = true
+stt_command = "whisper-cli"
+stt_model = "/Users/you/.cache/aha-moment-recorder/models/whisper/ggml-small.bin"
+stt_language = "zh"
+stt_timeout = 300
 api_key_file = "/Users/you/.config/aha-moment-recorder/api-key"
 apple_notes_database = "/Users/you/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"
 include_deleted_notes = false
@@ -100,6 +105,21 @@ aha-moment-recorder watch --config "$HOME/.config/aha-moment-recorder/settings.t
 ```
 
 `--mode capture-only` 只保存來源，不呼叫 AI；`collect-and-organize` 會保留來源並追加通用整理。`--no-git-commit` 可停用 Vault 為 Git worktree 時的自動 commit。
+
+### 本機語音轉逐字稿
+
+目前的文字整理 endpoint 是 text-only 反代，所以音訊不會直接送給它。預設的音訊路徑是在本機用 `whisper.cpp` 轉成逐字稿，再把逐字稿和原始音訊放進同一筆記錄，最後只把文字交給既有的 `gpt-5.6-luna` 文字整理 endpoint。原始音訊不會離開這台 Mac。
+
+macOS 安裝工具與模型：
+
+```sh
+brew install whisper-cpp ffmpeg
+mkdir -p "$HOME/.cache/aha-moment-recorder/models/whisper"
+curl -L --fail --output "$HOME/.cache/aha-moment-recorder/models/whisper/ggml-small.bin" \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
+```
+
+把 `stt_model` 設成模型的絕對路徑後，`watch` 會自動處理新音訊；既有音訊在下一次掃描時也會補上逐字稿。若要只收錄某一輪，可加 `--no-transcribe`；若只想停用預設背景轉錄，設定 `auto_transcribe = false`。`doctor` 的 `transcription` 區塊會檢查 `whisper-cli` 與模型是否真的存在。
 
 ## macOS LaunchAgent
 
@@ -144,9 +164,7 @@ aha-moment-recorder uninstall-agent
 └── attachments/
 ```
 
-Vault 內的 `.bridge/state.json` 保存可重試的處理狀態。原始文字、音訊、逐字稿與附件留在同一筆記錄；AI 整理只更新明確的 AI section。只收錄模式不會送出 AI request。
-
-目前不會自行替純音訊檔產生逐字稿：只有音訊、尚未有逐字稿的記錄會保留原始音訊並標成 `transcript pending`，等逐字稿來源出現後再自動整理。這個 repo 不會在沒有明確設定下把私人音訊送到另一個轉錄服務。
+Vault 內的 `.bridge/state.json` 保存可重試的處理狀態。原始文字、音訊、逐字稿與附件留在同一筆記錄；AI 整理只更新明確的 AI section。只收錄模式不會送出 AI request。若本機轉錄失敗，原始音訊仍會保留，記錄會標成錯誤並在下一輪重試；不會用錯誤的逐字稿取代來源。
 
 請把 Vault、錄音、逐字稿、key file 與 LaunchAgent log 視為私人資料，不要放進 GitHub checkout。repo 的 `.gitignore` 會忽略常見 `records/`、`.bridge/`、log、local config 與 credential pattern，但提交前仍應檢查 staged diff。
 

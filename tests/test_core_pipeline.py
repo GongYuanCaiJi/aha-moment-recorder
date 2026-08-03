@@ -18,6 +18,7 @@ from aha_moment_recorder.pipeline import RecordPipeline
 from aha_moment_recorder.sources import RecordGroup, SourceScanner
 from aha_moment_recorder.state import StateStore
 from aha_moment_recorder.storage import RecordStore
+from aha_moment_recorder.transcription import TranscriptionError
 
 
 class FakeOrganizer:
@@ -91,6 +92,21 @@ class RecordingGitRunner:
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
 
+class FakeTranscriber:
+    def __init__(self, *, fail_once: bool = False) -> None:
+        self.calls: list[tuple[Path, Path]] = []
+        self.fail_once = fail_once
+
+    def transcribe(self, audio_path: Path, output_path: Path) -> str:
+        self.calls.append((audio_path, output_path))
+        if self.fail_once:
+            self.fail_once = False
+            raise TranscriptionError("fixture STT failure")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("本機產生的逐字稿。\n", encoding="utf-8")
+        return "本機產生的逐字稿。"
+
+
 class CorePipelineTests(unittest.TestCase):
     def test_source_scanner_keeps_transcript_only_and_attachments(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -126,6 +142,11 @@ state = "config-state.json"
 endpoint = "http://config/v1"
 model = "config-model"
 mode = "capture-only"
+auto_transcribe = true
+stt_command = "fixture-whisper"
+stt_model = "models/ggml-small.bin"
+stt_language = "zh"
+stt_timeout = 42
 """.strip()
                 + "\n",
                 encoding="utf-8",
@@ -155,6 +176,10 @@ mode = "capture-only"
             self.assertEqual(settings.model, "cli-model")
             self.assertEqual(settings.mode, "collect-and-organize")
             self.assertEqual(settings.api_key, "fixture-key")
+            self.assertTrue(settings.auto_transcribe)
+            self.assertEqual(settings.stt_command, "fixture-whisper")
+            self.assertEqual(settings.stt_model, (root / "models/ggml-small.bin").resolve())
+            self.assertEqual(settings.stt_timeout, 42)
 
             config.write_text('api_key = "must-not-be-in-toml"\n', encoding="utf-8")
             with self.assertRaises(ConfigError):
@@ -260,6 +285,108 @@ mode = "capture-only"
             self.assertIn("只有逐字稿內容", content)
             self.assertNotIn("### 原始文字", content)
             self.assertEqual(content.count("## AI 整理"), 1)
+
+    def test_pipeline_transcribes_audio_into_the_same_record_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = root / "inbox"
+            vault = root / "vault"
+            inbox.mkdir()
+            audio = inbox / "voice.m4a"
+            audio.write_bytes(b"fixture audio")
+            organizer = FakeOrganizer()
+            transcriber = FakeTranscriber()
+            state = StateStore(vault / ".bridge/state.json")
+            pipeline = RecordPipeline(
+                SourceScanner([inbox]),
+                RecordStore(vault),
+                organizer,
+                state,
+                auto_commit=False,
+                transcriber=transcriber,
+            )
+
+            first = pipeline.scan()[0]
+            second = pipeline.scan()[0]
+            record_dir = vault / "records/vm-voice"
+            record = record_dir / "record.md"
+
+            self.assertEqual(first["status"], "completed")
+            self.assertEqual(first["transcription"], "completed")
+            self.assertEqual(second["status"], "unchanged")
+            self.assertEqual(len(transcriber.calls), 1)
+            self.assertEqual(len(organizer.calls), 1)
+            self.assertTrue((record_dir / "attachments/raw-audio.m4a").is_file())
+            self.assertEqual(
+                (record_dir / "attachments/transcript-01.txt").read_text(encoding="utf-8"),
+                "本機產生的逐字稿。\n",
+            )
+            content = record.read_text(encoding="utf-8")
+            self.assertIn("### 原始音訊", content)
+            self.assertIn("### 逐字稿", content)
+            self.assertIn("本機產生的逐字稿。", content)
+            self.assertIn("### 分類", content)
+            self.assertTrue(audio.is_file())
+
+    def test_transcription_failure_is_recorded_and_retried(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = root / "inbox"
+            vault = root / "vault"
+            inbox.mkdir()
+            (inbox / "retry.m4a").write_bytes(b"fixture audio")
+            transcriber = FakeTranscriber(fail_once=True)
+            state = StateStore(vault / ".bridge/state.json")
+            pipeline = RecordPipeline(
+                SourceScanner([inbox]),
+                RecordStore(vault),
+                FakeOrganizer(),
+                state,
+                auto_commit=False,
+                transcriber=transcriber,
+            )
+
+            first = pipeline.scan()[0]
+            second = pipeline.scan()[0]
+            record = vault / "records/vm-retry/record.md"
+
+            self.assertEqual(first["status"], "error")
+            self.assertEqual(first["transcription"], "error")
+            self.assertEqual(second["status"], "completed")
+            self.assertEqual(len(transcriber.calls), 2)
+            self.assertIn("本機產生的逐字稿。", record.read_text(encoding="utf-8"))
+
+    def test_transcriber_fills_only_missing_segments_when_a_record_has_multiple_audio_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = root / "inbox"
+            vault = root / "vault"
+            inbox.mkdir()
+            (inbox / "part-a.m4a").write_bytes(b"audio a")
+            (inbox / "part-b.m4a").write_bytes(b"audio b")
+            record_dir = vault / "records/vm-shared/attachments"
+            record_dir.mkdir(parents=True)
+            (record_dir / "transcript-01.txt").write_text("已存在的逐字稿。\n", encoding="utf-8")
+
+            def metadata(_: Path) -> dict[str, str]:
+                return {"title": "同一筆記錄", "voice_memo_uuid": "shared"}
+
+            transcriber = FakeTranscriber()
+            pipeline = RecordPipeline(
+                SourceScanner([inbox], metadata_reader=metadata),
+                RecordStore(vault),
+                FakeOrganizer(),
+                StateStore(vault / ".bridge/state.json"),
+                auto_commit=False,
+                transcriber=transcriber,
+            )
+
+            result = pipeline.scan()[0]
+
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(len(transcriber.calls), 1)
+            self.assertEqual(transcriber.calls[0][0].name, "part-b.m4a")
+            self.assertTrue((record_dir / "transcript-02.txt").is_file())
 
     def test_commit_failure_is_reported_and_next_scan_retries_without_ai(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
