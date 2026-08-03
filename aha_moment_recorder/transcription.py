@@ -131,4 +131,3 @@ class WhisperCppTranscriber:
         temporary.write_text(text + "\n", encoding="utf-8")
         temporary.replace(destination)
         return text
-
