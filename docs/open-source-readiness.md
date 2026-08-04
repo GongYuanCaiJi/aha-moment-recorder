@@ -1,45 +1,53 @@
-# 開源準備狀態
+# 開源發布準備狀態
 
-目前 repository 維持 **private pre-release**。程式碼、文件與驗證流程已整理成可以公開的狀態，但在確認沒有私人資料後，才應將 GitHub visibility 改為 public。
+查核日期：2026-08-04
 
-## 已完成
+目前 repository 仍維持 **private pre-release**。核心程式已能由陌生使用者從 GitHub checkout 安裝、測試與執行；但 visibility 改為 `public` 前，仍須完成下列發布 gate。
 
-- MIT license、README、貢獻指南、安全政策與行為準則。
-- 可從 checkout 安裝的 Python package 與 CLI。
-- 已從 GitHub 的 `agent/define-ai-output` 做 fresh clone，完成 package install、`doctor`、capture-only `run`、40 tests、compile 與 diff check。
-- 不依賴作者私有路徑或 repository 內秘密的設定與認證邊界。
-- `capture-only` 與 `collect-and-organize` 的公開介面、來源保留規則與可重試 state。
-- macOS LaunchAgent 的 install、running 狀態檢查、doctor 與 uninstall。
-- 隔離 file-backed E2E、本機 STT adapter 測試與 file-backed pipeline 測試、compile/diff 檢查，以及 Python 3.11、3.12、3.13 的 GitHub Actions；目前本機測試套件共 40 tests。
-- GitHub Issue/PR 模板與開源維護入口。
+## 已驗證
 
-## 已知邊界（不是目前的回歸故障）
+- 根目錄有 MIT `LICENSE`、`README.md`、`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md` 與 `CHANGELOG.md`。
+- Default branch 是 `agent/wayfinder-bootstrap`，目前 head 為 `7fdc39c`；GitHub 上的 default-branch CI run 已成功。
+- 以乾淨 clone 執行 package install、CLI `--help`、`init`、`doctor`、capture-only `run`：全部成功。
+- 乾淨 clone 的 Python unittest 共 45 tests，全部通過；`py_compile` 與 `git diff --check` 也通過。
+- tracked tree 沒有 `.env`、Python cache、`*.DS_Store`、API key 或 private key；對目前可達 heads/remotes 的人工 pattern scan 沒有找到明顯 token 或秘密。
+- `pyproject.toml` 沒有必要 runtime dependency；可選的 `apple-notes-parser` 0.2.x 使用 MIT License，且不會把第三方程式碼 vendored 進 repository。
 
-以下是刻意未包含在目前核心範圍內的工作：
+## 公開前必須完成
 
-- 不提供行動端 App 或特定外部筆記／錄音資料庫的原生匯入 adapter；來源檔案需要先進入設定的 source inbox。
-- 不在本 repo 內提供雲端語音服務；預設的 `WhisperCppTranscriber` 只呼叫使用者本機安裝的 `whisper-cli`，也保留可注入其他 Transcriber 的介面。
+### 1. 更新發布證據
+
+本文件本身就是公開發布的 evidence。任何 branch、commit、測試數量或 GitHub PR 狀態變動，都必須同步更新這裡，不得保留舊的 SHA、測試數或已合併 PR 描述。
+
+### 2. 決定 Git 歷史的作者識別
+
+目前可達歷史中有 35 個 commit 使用 `daniel890913@gmail.com` 作為 author／committer。若這個信箱不應公開，必須在 visibility 變更前由 repository owner 決定是否重寫歷史；`.mailmap` 不能移除舊 commit metadata。
+
+### 3. 建立可驗證的安全回報管道
+
+`SECURITY.md` 指向 GitHub private vulnerability reporting，但目前 GitHub API 回報 `security_and_analysis=null`，功能尚未 live-confirmed。公開前必須啟用並實際驗證該管道，或在 `SECURITY.md` 提供一個可履行的私下聯絡方式。
+
+### 4. 完成公開 refs 審查
+
+公開 repository 會暴露所有可達 branches、tags、PR 與 commit metadata。目前仍有 research PR 與遠端 branches 開啟；公開前逐一確認內容可公開，或合併／關閉／刪除不需要的 refs。研究文件中若有本機反代 port、process 名稱或作者環境細節，也要先移除或確認可公開。
+
+### 5. 啟用最小 GitHub 保護
+
+公開前至少要 live-verify：default branch 的 required CI checks、secret scanning／push protection（帳號方案支援時）、Dependabot，以及 `SECURITY.md` 連結可用。這些設定不能只寫在文件裡，必須用 GitHub repository settings 或 API 確認實際狀態。
+
+## 已知產品邊界（不是發布 blocker）
+
+- 不提供行動端 App 或特定外部資料庫的原生匯入 adapter；來源檔案需要先進入設定的 source inbox。
+- 不在本 repo 內提供雲端語音服務；預設音訊轉錄使用使用者本機安裝的 `whisper-cli`。
 - 不提供自有雲端同步、備份服務或第二裝置的實機驗收。
-- 不承諾特定 AI provider 的模型品質；只驗證 OpenAI-compatible transport 與四欄位結果契約。
-- 搜尋、回顧、向量索引、多人協作與其他產品級功能仍是後續範圍。
+- 不承諾特定 AI provider 的模型品質，只驗證 OpenAI-compatible transport 與四欄位結果契約。
+- 搜尋、回顧、向量索引、多人協作與其他產品級功能屬後續範圍。
 
-這些未完成項不會阻止目前的核心 CLI 開源；它們應在新增功能前先建立獨立 issue 與驗收條件。
+## 公開前最終清單
 
-## 目前 GitHub 分支狀態
-
-完整開源準備內容目前在 `agent/define-ai-output`（HEAD `b81ed9e`），並由 [PR #14](https://github.com/GongYuanCaiJi/aha-moment-recorder/pull/14) 對應到現有 default branch `agent/wayfinder-bootstrap`。PR 目前不是 draft，但仍需完成 review／merge 與 default branch 整理；在這些步驟完成前，不應把 repository visibility 改為 public。
-
-## 公開前檢查
-
-1. 確認 `git status`、staged diff 與 Git history 沒有 Vault、錄音、逐字稿、API key、local config 或 LaunchAgent log。
-2. 確認 `README.md`、`SECURITY.md`、`CONTRIBUTING.md` 與 [CHANGELOG.md](../CHANGELOG.md) 的安裝、支援範圍與限制描述一致。
-3. 確認 default branch 是包含最新驗證結果的 `main`，並將 CI required checks 與 branch protection 設好。
-4. 在 GitHub 啟用 private vulnerability reporting（若帳號／repo 功能可用），確認 Security policy 可見。
-5. 將 repository visibility 改為 public 前，再做一次 fresh clone、安裝、`doctor`、capture-only E2E 與 GitHub Actions 檢查。
-6. 以 git tag 與 GitHub Release 發布第一個正式版本；`0.1.0` 目前只是 pre-release baseline。
-
-## 目前的追蹤 issue
-
-- [#1 v1 決策規格](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/1) 仍是產品層 map。
-- [#8–#15](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/8) 是搜尋、同步、provider 與其他產品範圍的後續決策，不是核心管線的 release blocker。
-- [#16 既有產品研究](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/16) 與 [#17 開源架構規格](https://github.com/GongYuanCaiJi/aha-moment-recorder/issues/17) 的成果已進入 repository；完成狀態會在 GitHub issue 上留下 evidence comment。
+- [ ] owner 確認是否公開歷史中的個人 author／committer email。
+- [ ] 完成完整 history／refs secret scan，並處理所有 findings。
+- [ ] 在 GitHub live-enable 並驗證安全回報、secret scanning／push protection、Dependabot 與 required CI checks。
+- [ ] 審查並整理所有公開 branches、tags、PR 與研究文件。
+- [ ] 以新的乾淨 clone 重跑安裝、`doctor`、capture-only E2E、45 tests、compile 與 diff check。
+- [ ] 建立第一個 `0.1.0` tag 與 GitHub Release；在此之前維持 `private pre-release`。

@@ -1,32 +1,30 @@
-## 變更摘要
+<!--
+PR template — 保持簡短。硬擋是 GitHub required checks，這份只是讓 owner 看得懂。
+規則：講「這個 PR 改了什麼」，問題背景放 Issue 並用 Closes # 連過去。
+-->
 
-<!-- 用繁體中文說明做了什麼，以及為什麼需要這個變更。 -->
+## 這個 PR 做了什麼
 
-## 相關 issue
+<!-- 一兩句、祈使句：diff 真正「改」了什麼（講改動本身，不是它叫用的工具）。 -->
 
-<!-- 例如：Closes #123；若沒有 issue，說明原因。 -->
+## 為什麼
 
-## 影響範圍
+<!-- diff 看不出來的理由：決策、取捨、目標。一小段。問題的大背景放 Issue。 -->
 
-- [ ] core pipeline
-- [ ] CLI / 設定
-- [ ] macOS LaunchAgent adapter
-- [ ] 文件或開源維護
-- [ ] 測試 / CI
+Closes #
 
-## 驗證
+## 怎麼驗證的
 
-請列出實際執行的 command 與結果：
+<!-- 你跑了什麼確認它 work：測試 / CI 那顆燈 / 本地指令 / UI 改動附圖。 -->
 
-```text
-python3 -m unittest discover -s tests -p 'test_*.py'
-python3 -m py_compile aha_moment_recorder/*.py build_backend.py
-git diff --check
-```
+## 主流方案 / Glue / 自製程式揭露
 
-## 隱私與相容性確認
+| 類型 | 內容 | 為什麼 |
+|---|---|---|
+| 主流方案 |  |  |
+| Glue / 膠合程式 |  |  |
+| 自製程式 |  |  |
 
-- [ ] 沒有提交 Vault、錄音、逐字稿、API key、local config 或 log。
-- [ ] 原始來源不會被 AI 結果覆寫。
-- [ ] macOS-specific 行為仍限制在 optional adapter。
-- [ ] README、SECURITY、CHANGELOG 或相關 domain docs 已同步更新（若適用）。
+## 備註（可選，沒有就刪）
+
+<!-- 破壞性變更、後續事項、相依增減，或指出 diff 裡值得看的地方。 -->
