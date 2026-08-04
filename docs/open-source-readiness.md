@@ -25,7 +25,7 @@
 
 ### 3. 建立可驗證的安全回報管道
 
-`SECURITY.md` 指向 GitHub private vulnerability reporting，但目前 GitHub API 回報 `security_and_analysis=null`，功能尚未 live-confirmed。公開前必須啟用並實際驗證該管道，或在 `SECURITY.md` 提供一個可履行的私下聯絡方式。
+`SECURITY.md` 指向 GitHub private vulnerability reporting，但目前 repository 仍是 private，GitHub API 尚未提供該功能的 endpoint。公開前必須在 visibility 變更後啟用並實際驗證該管道，或在 `SECURITY.md` 提供一個可履行的私下聯絡方式。
 
 ### 4. 完成公開 refs 審查
 
@@ -33,7 +33,7 @@
 
 ### 5. 啟用最小 GitHub 保護
 
-公開前至少要 live-verify：default branch 的 required CI checks、secret scanning／push protection（帳號方案支援時）、Dependabot，以及 `SECURITY.md` 連結可用。這些設定不能只寫在文件裡，必須用 GitHub repository settings 或 API 確認實際狀態。
+目前已啟用 default branch 的 required CI checks、Dependabot vulnerability alerts 與 automated security fixes；`dependabot.yml` 也已提交。Secret scanning／push protection 在 repository 保持 private 時不可用，必須在 visibility 變更後再啟用並 live-verify；這些設定不能只寫在文件裡。
 
 ## 已知產品邊界（不是發布 blocker）
 
@@ -47,7 +47,7 @@
 
 - [ ] owner 確認是否公開歷史中的個人 author／committer email。
 - [ ] 完成完整 history／refs secret scan，並處理所有 findings。
-- [ ] 在 GitHub live-enable 並驗證安全回報、secret scanning／push protection、Dependabot 與 required CI checks。
+- [ ] 在 visibility 變更後 live-enable 並驗證安全回報與 secret scanning／push protection；目前 Dependabot alerts、automated security fixes 與 required CI checks 已啟用。
 - [ ] 審查並整理所有公開 branches、tags、PR 與研究文件。
 - [ ] 以新的乾淨 clone 重跑安裝、`doctor`、capture-only E2E、45 tests、compile 與 diff check。
 - [ ] 建立第一個 `0.1.0` tag 與 GitHub Release；在此之前維持 `private pre-release`。
