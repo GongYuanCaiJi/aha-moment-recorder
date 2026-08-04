@@ -15,7 +15,7 @@ dependencies = []
 [project.optional-dependencies]
 macos = ["apple-notes-parser>=0.2,<0.3"]
 authors = [{name = "GongYuanCaiJi"}]
-keywords = ["personal-records", "local-first", "obsidian", "macos", "openai-compatible"]
+keywords = ["personal-records", "local-first", "macos", "openai-compatible"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: MacOS X",
