@@ -243,20 +243,43 @@ class SourceScanner:
             return SourceMetadata(title=path.stem)
 
     @staticmethod
-    def _register_aliases(aliases: dict[str, str], path: Path, group_key: str) -> None:
+    def _register_aliases(
+        aliases: dict[str, set[str]], path: Path, group_key: str
+    ) -> None:
+        scope = str(path.expanduser().resolve().parent)
         values = {normalize_key(path), path.stem.lower()}
         for value in values:
             if value:
-                aliases.setdefault(value, group_key)
+                alias = f"{scope}\0{value}"
+                aliases.setdefault(alias, set()).add(group_key)
 
     @staticmethod
-    def _find_group(aliases: Mapping[str, str], path: Path) -> str | None:
+    def _find_group(aliases: Mapping[str, set[str]], path: Path) -> str | None:
+        scope = str(path.expanduser().resolve().parent)
+        candidates: set[str] = set()
         values = (normalize_key(path), path.stem.lower())
         for value in values:
-            group_key = aliases.get(value)
-            if group_key:
-                return group_key
-        return None
+            candidates.update(aliases.get(f"{scope}\0{value}", ()))
+        return next(iter(candidates)) if len(candidates) == 1 else None
+
+    @staticmethod
+    def _new_group_key(
+        base: str,
+        path: Path,
+        groups: Mapping[str, RecordGroup],
+    ) -> str:
+        """Keep local identities distinct when a scope reuses a basename."""
+
+        if base not in groups:
+            return base
+        scope = str(path.expanduser().resolve().parent)
+        scope_hash = hashlib.sha256(scope.encode("utf-8")).hexdigest()[:10]
+        candidate = f"{base}-{scope_hash}"
+        index = 2
+        while candidate in groups:
+            candidate = f"{base}-{scope_hash}-{index}"
+            index += 1
+        return candidate
 
     def scan(self) -> list[RecordGroup]:
         files = self.iter_files()
@@ -270,24 +293,43 @@ class SourceScanner:
             and path.suffix.lower() not in TEXT_SUFFIXES
         ]
         groups: dict[str, RecordGroup] = {}
-        aliases: dict[str, str] = {}
+        aliases: dict[str, set[str]] = {}
+        stable_aliases: dict[str, str] = {}
 
         for path in audios:
             metadata = self._metadata(path)
-            group_key = (metadata.voice_memo_uuid or normalize_key(path)).lower()
-            group = groups.setdefault(
-                group_key,
-                RecordGroup(
+            stable_identity = (
+                metadata.voice_memo_uuid.strip().lower()
+                if metadata.voice_memo_uuid
+                else None
+            )
+            if stable_identity:
+                group_key = stable_aliases.get(stable_identity)
+                if group_key is None:
+                    group_key = stable_identity
+                    if group_key in groups:
+                        group_key = self._new_group_key(group_key, path, groups)
+                    groups[group_key] = RecordGroup(
+                        group_key,
+                        metadata.title or path.stem,
+                        "voice-memo",
+                        captured_at=metadata.captured_at,
+                    )
+                    stable_aliases[stable_identity] = group_key
+                group = groups[group_key]
+            else:
+                group_key = self._new_group_key(
+                    normalize_key(path), path, groups
+                )
+                group = RecordGroup(
                     group_key,
                     metadata.title or path.stem,
                     "voice-memo",
                     captured_at=metadata.captured_at,
-                ),
-            )
+                )
+                groups[group_key] = group
             group.audio.append(path)
             self._register_aliases(aliases, path, group_key)
-            if metadata.voice_memo_uuid:
-                aliases.setdefault(metadata.voice_memo_uuid.lower(), group_key)
 
         unmatched_texts: list[Path] = []
         for path in texts:
@@ -296,19 +338,26 @@ class SourceScanner:
                 unmatched_texts.append(path)
                 continue
             group = groups[group_key]
+            attached = True
             if is_transcript(path):
                 group.transcript.append(path)
-            else:
+            elif not group.raw_text:
                 group.raw_text.append(path)
-            self._register_aliases(aliases, path, group_key)
+            else:
+                unmatched_texts.append(path)
+                attached = False
+            if attached:
+                self._register_aliases(aliases, path, group_key)
 
         for path in unmatched_texts:
-            group_key = normalize_key(path)
-            transcript = is_transcript(path)
-            group = groups.setdefault(
-                group_key,
-                RecordGroup(group_key, group_key, "transcript" if transcript else "text"),
+            group_key = self._new_group_key(
+                normalize_key(path), path, groups
             )
+            transcript = is_transcript(path)
+            group = RecordGroup(
+                group_key, group_key, "transcript" if transcript else "text"
+            )
+            groups[group_key] = group
             if transcript:
                 group.transcript.append(path)
             else:
@@ -318,8 +367,10 @@ class SourceScanner:
         for path in attachments:
             group_key = self._find_group(aliases, path)
             if group_key is None:
-                group_key = normalize_key(path)
-                groups.setdefault(group_key, RecordGroup(group_key, path.stem, "attachment"))
+                group_key = self._new_group_key(
+                    normalize_key(path), path, groups
+                )
+                groups[group_key] = RecordGroup(group_key, path.stem, "attachment")
             groups[group_key].attachments.append(path)
             self._register_aliases(aliases, path, group_key)
 

@@ -1,6 +1,6 @@
 """Portable core pipeline for the personal record system."""
 
-from .config import ConfigError, Settings, load_settings
+from .config import ConfigError, ExecutionSnapshot, Settings, load_settings
 from .apple_notes import AppleNotesImportError, AppleNotesScanner
 from .git_adapter import GitCommitError, GitCommitter
 from .launchagent import LaunchAgentError, LaunchAgentManager, LaunchAgentStatus
@@ -19,6 +19,7 @@ from .transcription import Transcriber, TranscriptionError, WhisperCppTranscribe
 
 __all__ = [
     "ConfigError",
+    "ExecutionSnapshot",
     "AppleNotesImportError",
     "AppleNotesScanner",
     "FOUR_FIELDS",

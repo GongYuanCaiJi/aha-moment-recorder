@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +35,13 @@ class ConfigError(ValueError):
 
 @dataclass(frozen=True)
 class Settings:
+    """Validated, immutable execution snapshot shared by every entry point.
+
+    ``api_key`` is deliberately kept out of the public snapshot and CLI
+    forwarding arguments.  It is only consumed by the injected organizer
+    transport at runtime.
+    """
+
     vault: Path
     sources: tuple[Path, ...]
     state_path: Path
@@ -64,20 +72,133 @@ class Settings:
         return self.endpoint
 
     def __post_init__(self) -> None:
-        if self.mode not in VALID_MODES:
+        if not isinstance(self.mode, str) or self.mode not in VALID_MODES:
             raise ConfigError(f"mode must be one of: {', '.join(sorted(VALID_MODES))}")
-        if not self.endpoint.strip():
+        if not isinstance(self.endpoint, str) or not self.endpoint.strip():
             raise ConfigError("endpoint must not be empty")
-        if self.timeout <= 0:
+        if not isinstance(self.model, str) or not self.model.strip():
+            raise ConfigError("model must not be empty")
+        if not isinstance(self.reasoning_effort, str) or not self.reasoning_effort.strip():
+            raise ConfigError("reasoning_effort must not be empty")
+        if not self.sources:
+            raise ConfigError("sources must contain at least one source root")
+        if not isinstance(self.timeout, (int, float)) or not math.isfinite(float(self.timeout)) or self.timeout <= 0:
             raise ConfigError("timeout must be greater than zero")
-        if not self.stt_command.strip():
+        if not isinstance(self.stt_command, str) or not self.stt_command.strip():
             raise ConfigError("stt_command must not be empty")
-        if not self.stt_ffmpeg_command.strip():
+        if not isinstance(self.stt_ffmpeg_command, str) or not self.stt_ffmpeg_command.strip():
             raise ConfigError("stt_ffmpeg_command must not be empty")
-        if not self.stt_language.strip():
+        if not isinstance(self.stt_language, str) or not self.stt_language.strip():
             raise ConfigError("stt_language must not be empty")
-        if self.stt_timeout <= 0:
+        if not isinstance(self.stt_timeout, (int, float)) or not math.isfinite(float(self.stt_timeout)) or self.stt_timeout <= 0:
             raise ConfigError("stt_timeout must be greater than zero")
+        for name, value in (
+            ("auto_commit", self.auto_commit),
+            ("retry_ai", self.retry_ai),
+            ("dry_run", self.dry_run),
+            ("auto_transcribe", self.auto_transcribe),
+            ("include_deleted_notes", self.include_deleted_notes),
+        ):
+            if not isinstance(value, bool):
+                raise ConfigError(f"{name} must be a boolean")
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return a JSON-safe diagnostic snapshot with secrets redacted."""
+
+        return {
+            "vault": str(self.vault),
+            "sources": [str(path) for path in self.sources],
+            "state_path": str(self.state_path),
+            "endpoint": self.endpoint,
+            "model": self.model,
+            "mode": self.mode,
+            "reasoning_effort": self.reasoning_effort,
+            "timeout": self.timeout,
+            "auto_commit": self.auto_commit,
+            "retry_ai": self.retry_ai,
+            "dry_run": self.dry_run,
+            "api_key": "configured" if self.api_key else "not configured",
+            "api_key_file": str(self.api_key_file) if self.api_key_file else None,
+            "secret_source": (
+                "key-file"
+                if self.api_key and self.api_key_file
+                else "environment"
+                if self.api_key
+                else None
+            ),
+            "apple_notes_database": (
+                str(self.apple_notes_database) if self.apple_notes_database else None
+            ),
+            "include_deleted_notes": self.include_deleted_notes,
+            "config_path": str(self.config_path) if self.config_path else None,
+            "auto_transcribe": self.auto_transcribe,
+            "stt_command": self.stt_command,
+            "stt_ffmpeg_command": self.stt_ffmpeg_command,
+            "stt_model": str(self.stt_model) if self.stt_model else None,
+            "stt_language": self.stt_language,
+            "stt_timeout": self.stt_timeout,
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        """Compatibility spelling for callers that serialize diagnostics."""
+
+        return self.snapshot()
+
+    def to_cli_args(self) -> list[str]:
+        """Serialize this snapshot as non-secret CLI overrides.
+
+        Every resolved value is sent explicitly so a LaunchAgent cannot drift
+        because its environment or defaults differ from the foreground run.
+        The API key value is never serialized; a key-file path is safe to pass
+        because the file itself remains outside the plist and repository.
+        """
+
+        arguments = [
+            "--vault",
+            str(self.vault),
+            "--state",
+            str(self.state_path),
+            "--endpoint",
+            self.endpoint,
+            "--model",
+            self.model,
+            "--mode",
+            self.mode,
+            "--reasoning-effort",
+            self.reasoning_effort,
+            "--timeout",
+            str(self.timeout),
+        ]
+        for source in self.sources:
+            arguments.extend(["--source", str(source)])
+        if self.apple_notes_database is None:
+            arguments.append("--no-apple-notes")
+        else:
+            arguments.extend(["--apple-notes-database", str(self.apple_notes_database)])
+        arguments.append(
+            "--include-deleted-notes" if self.include_deleted_notes else "--no-include-deleted-notes"
+        )
+        arguments.append("--auto-commit" if self.auto_commit else "--no-git-commit")
+        arguments.append("--retry-ai" if self.retry_ai else "--no-retry-ai")
+        arguments.append("--transcribe" if self.auto_transcribe else "--no-transcribe")
+        arguments.append("--dry-run" if self.dry_run else "--no-dry-run")
+        arguments.extend(["--stt-command", self.stt_command])
+        arguments.extend(["--stt-ffmpeg-command", self.stt_ffmpeg_command])
+        if self.stt_model is None:
+            arguments.append("--no-stt-model")
+        else:
+            arguments.extend(["--stt-model", str(self.stt_model)])
+        arguments.extend(["--stt-language", self.stt_language])
+        arguments.extend(["--stt-timeout", str(self.stt_timeout)])
+        if self.config_path is not None:
+            arguments.extend(["--config", str(self.config_path)])
+        if self.api_key_file is not None:
+            arguments.extend(["--api-key-file", str(self.api_key_file)])
+        return arguments
+
+
+# Public compatibility name for the validated execution snapshot seam.
+ExecutionSnapshot = Settings
 
 
 def _default_sources() -> tuple[Path, ...]:
@@ -283,14 +404,37 @@ def load_settings(
     no_git_commit = command_line.get("no_git_commit")
     if no_git_commit is True:
         auto_commit = False
+    elif command_line.get("auto_commit") is not None:
+        auto_commit = _bool(command_line["auto_commit"], name="auto_commit")
     else:
         auto_commit = _bool(choose("auto_commit", default=True), name="auto_commit")
-    retry_ai = _bool(choose("retry_ai", default=False), name="retry_ai")
-    dry_run = _bool(choose("dry_run", default=False), name="dry_run")
+    if command_line.get("no_retry_ai") is True:
+        retry_ai = False
+    else:
+        retry_ai = _bool(
+            command_line["retry_ai"]
+            if command_line.get("retry_ai") is not None
+            else choose("retry_ai", default=False),
+            name="retry_ai",
+        )
+    if command_line.get("no_dry_run") is True:
+        dry_run = False
+    else:
+        dry_run = _bool(
+            command_line["dry_run"]
+            if command_line.get("dry_run") is not None
+            else choose("dry_run", default=False),
+            name="dry_run",
+        )
     auto_transcribe = (
         False
         if command_line.get("no_transcribe") is True
-        else _bool(choose("auto_transcribe", default=True), name="auto_transcribe")
+        else _bool(
+            command_line["auto_transcribe"]
+            if command_line.get("auto_transcribe") is not None
+            else choose("auto_transcribe", default=True),
+            name="auto_transcribe",
+        )
     )
     stt_command = str(
         choose("stt_command", env_names=("STT_COMMAND",), default=DEFAULT_STT_COMMAND)
@@ -302,10 +446,14 @@ def load_settings(
             default=DEFAULT_STT_FFMPEG_COMMAND,
         )
     )
-    stt_model_value = choose(
-        "stt_model",
-        env_names=("STT_MODEL", "TRANSCRIBER_MODEL"),
-        default=None,
+    stt_model_value = (
+        None
+        if command_line.get("no_stt_model") is True
+        else choose(
+            "stt_model",
+            env_names=("STT_MODEL", "TRANSCRIBER_MODEL"),
+            default=None,
+        )
     )
     stt_model = (
         _path(stt_model_value, base=value_base("stt_model"))
@@ -358,9 +506,15 @@ def load_settings(
         if apple_notes_value
         else None
     )
-    include_deleted_notes = _bool(
-        choose("include_deleted_notes", aliases=("include_deleted",), default=False),
-        name="include_deleted_notes",
+    include_deleted_notes = (
+        False
+        if command_line.get("no_include_deleted_notes") is True
+        else _bool(
+            command_line["include_deleted_notes"]
+            if command_line.get("include_deleted_notes") is not None
+            else choose("include_deleted_notes", aliases=("include_deleted",), default=False),
+            name="include_deleted_notes",
+        )
     )
 
     return Settings(

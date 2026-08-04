@@ -20,6 +20,16 @@ class Organizer(Protocol):
     def organize(self, text: str) -> Organization | Mapping[str, Any]: ...
 
 
+LIFECYCLE_STAGES = (
+    "discovered",
+    "captured",
+    "transcribing",
+    "organized",
+    "committed",
+    "failed",
+)
+
+
 class RecordPipeline:
     """Process normalized groups through storage, AI, state, and Git adapters."""
 
@@ -102,6 +112,7 @@ class RecordPipeline:
             return {
                 "record_id": group.record_id,
                 "status": "deferred",
+                "lifecycle": "discovered",
                 "error": f"source is not ready: {str(exc)[:120]}",
             }
         previous = self.state.get(group.record_id)
@@ -116,32 +127,44 @@ class RecordPipeline:
             and record_path.is_file()
             and previous.get("signature") == signature
             and previous.get("processing_mode", self.mode) == effective_mode
-            and not self.retry_ai
             and not needs_transcription
         ):
             if self.committer is None or not self.auto_commit:
                 return {
                     "record_id": group.record_id,
                     "status": "error",
+                    "lifecycle": "failed",
                     "error": "record commit is still pending but Git is disabled",
-                    "path": str(record_path),
-                }
-            try:
-                commit = self.committer.commit(record_path, group.record_id, self.state.path)
-            except (GitCommitError, OSError, RuntimeError) as exc:
-                return {
-                    "record_id": group.record_id,
-                    "status": "error",
-                    "error": str(exc)[:160],
                     "path": str(record_path),
                 }
             pending_state = dict(previous)
             pending_state["commit_pending"] = False
+            pending_state["lifecycle"] = "committed"
+            pending_state["status"] = pending_state.get("last_status", "completed")
+            pending_state["commit_status"] = "committed"
             self.state.set(group.record_id, pending_state)
             self.state.save()
+            try:
+                commit = self.committer.commit(record_path, group.record_id, self.state.path)
+            except (GitCommitError, OSError, RuntimeError) as exc:
+                pending_state["commit_pending"] = True
+                pending_state["status"] = "error"
+                pending_state["lifecycle"] = "failed"
+                pending_state["commit_status"] = "pending"
+                self.state.set(group.record_id, pending_state)
+                self.state.save()
+                return {
+                    "record_id": group.record_id,
+                    "status": "error",
+                    "lifecycle": "failed",
+                    "error": str(exc)[:160],
+                    "path": str(record_path),
+                }
             return {
                 "record_id": group.record_id,
-                "status": previous.get("status", "completed"),
+                "status": pending_state["status"],
+                "lifecycle": "committed",
+                "commit_status": "committed",
                 "commit": commit,
                 "path": str(record_path),
             }
@@ -156,9 +179,15 @@ class RecordPipeline:
             and not previous.get("commit_pending")
             and not needs_transcription
         ):
-            return {"record_id": group.record_id, "status": "unchanged"}
+            return {
+                "record_id": group.record_id,
+                "status": "unchanged",
+                "lifecycle": previous.get("lifecycle", "organized"),
+                "commit_status": previous.get("commit_status", "disabled"),
+            }
 
         transcription_error: str | None = None
+        lifecycle = "transcribing" if needs_transcription else "captured"
         try:
             if not self.dry_run:
                 self.store.copy_sources(group)
@@ -179,12 +208,14 @@ class RecordPipeline:
                 return {
                     "record_id": group.record_id,
                     "status": "deferred",
+                    "lifecycle": "discovered",
                     "error": f"source changed while reading: {str(source_exc)[:120]}",
                 }
         except OSError as exc:
             return {
                 "record_id": group.record_id,
                 "status": "deferred",
+                "lifecycle": "discovered",
                 "error": f"source changed while reading: {str(exc)[:120]}",
             }
         ai_status = "skipped" if effective_mode == CAPTURE_ONLY else "pending"
@@ -224,6 +255,12 @@ class RecordPipeline:
                 self.store.update_organization(record_path, organization)
 
         state_status = "error" if transcription_error or (ai_error and ai_status == "error") else ai_status
+        if transcription_error or (ai_error and ai_status == "error"):
+            lifecycle = "failed"
+        elif organization is not None:
+            lifecycle = "organized"
+        elif effective_mode == CAPTURE_ONLY or ai_status == "pending":
+            lifecycle = "captured"
         self.state.set(
             group.record_id,
             {
@@ -233,6 +270,8 @@ class RecordPipeline:
                 "updated_at": self.state.clock(),
                 "sources": [str(path) for path in group.all_sources],
                 "commit_pending": False,
+                "lifecycle": lifecycle,
+                "commit_status": "pending" if self.auto_commit and self.committer is not None else "disabled",
             },
         )
         if not self.dry_run:
@@ -240,24 +279,41 @@ class RecordPipeline:
 
         commit: str | None = None
         if not self.dry_run and self.auto_commit and self.committer is not None:
+            committed_state = self.state.get(group.record_id) or {}
+            committed_state["commit_status"] = "committed"
+            committed_state["commit_pending"] = False
+            self.state.set(group.record_id, committed_state)
+            self.state.save()
             try:
                 commit = self.committer.commit(record_path, group.record_id, self.state.path)
             except (GitCommitError, OSError, RuntimeError) as exc:
                 pending_state = self.state.get(group.record_id) or {}
                 pending_state["commit_pending"] = True
+                pending_state["last_status"] = state_status
+                pending_state["last_lifecycle"] = lifecycle
+                pending_state["status"] = "error"
+                pending_state["lifecycle"] = "failed"
+                pending_state["commit_status"] = "pending"
                 self.state.set(group.record_id, pending_state)
                 self.state.save()
                 return {
                     "record_id": group.record_id,
                     "status": "error",
+                    "lifecycle": "failed",
+                    "commit_status": "pending",
                     "error": str(exc)[:160],
                     "path": str(record_path),
                 }
+            commit_status = "committed"
+        else:
+            commit_status = "disabled"
 
         result_status = "error" if transcription_error else ai_status
         return {
             "record_id": group.record_id,
             "status": result_status,
+            "lifecycle": lifecycle,
+            "commit_status": commit_status,
             "sources": len(group.all_sources),
             "audio": len(group.audio),
             "transcript": bool(transcript),
@@ -270,7 +326,14 @@ class RecordPipeline:
     def scan(self) -> list[dict[str, Any]]:
         results = [self.process(group) for group in self.scanner.scan()]
         for error in getattr(self.scanner, "errors", ()):
-            results.append({"record_id": "source-scan", "status": "deferred", "error": error})
+            results.append(
+                {
+                    "record_id": "source-scan",
+                    "status": "deferred",
+                    "lifecycle": "discovered",
+                    "error": error,
+                }
+            )
         return results
 
     def process_group(self, group: RecordGroup) -> dict[str, Any]:

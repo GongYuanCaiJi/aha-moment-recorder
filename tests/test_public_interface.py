@@ -130,6 +130,40 @@ class PublicInterfaceContractTests(unittest.TestCase):
                 "不可覆寫的原始文字",
             )
 
+    def test_record_store_preserves_raw_boundaries_and_updates_only_marked_ai_section(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = root / "inbox"
+            vault = root / "vault"
+            inbox.mkdir()
+            raw = "  原始文字的前後空白必須保留  \n"
+            (inbox / "boundaries.txt").write_text(raw, encoding="utf-8")
+
+            group = SourceScanner([inbox]).scan()[0]
+            store = RecordStore(vault, clock=lambda: "2026-08-02T00:00:00+00:00")
+            record_path = store.write_record(
+                group,
+                source_signature(group),
+                ai_status="pending",
+                processing_mode="collect-and-organize",
+            )
+            record_path.write_text(
+                record_path.read_text(encoding="utf-8")
+                + "\n## 使用者附註\n\n這段不屬於 AI 整理。\n",
+                encoding="utf-8",
+            )
+
+            store.update_organization(
+                record_path,
+                Organization("想法", ("邊界",), "整理後內容", "摘要"),
+            )
+
+            content = record_path.read_text(encoding="utf-8")
+            self.assertIn(raw, content)
+            self.assertIn("## 使用者附註\n\n這段不屬於 AI 整理。", content)
+            self.assertEqual(content.count("<!-- aha-bridge:ai -->"), 1)
+            self.assertEqual(content.count("<!-- /aha-bridge:ai -->"), 1)
+
     def test_state_store_recovers_invalid_json_and_round_trips_public_operations(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             state_path = Path(temp) / ".bridge" / "state.json"

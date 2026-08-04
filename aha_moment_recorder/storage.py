@@ -20,6 +20,11 @@ from .sources import RecordGroup, sha256_file
 from .state import utc_now
 
 
+AI_HEADING = "## AI 整理"
+AI_START_MARKER = "<!-- aha-bridge:ai -->"
+AI_END_MARKER = "<!-- /aha-bridge:ai -->"
+
+
 def yaml_value(value: str | int | float | bool | None) -> str:
     if value is None:
         return "null"
@@ -42,9 +47,33 @@ def extract_frontmatter(markdown: str) -> dict[str, str]:
     return result
 
 
+def _ai_section_offsets(markdown: str) -> tuple[int, int, int, int] | None:
+    starts = list(
+        re.finditer(rf"(?m)^{re.escape(AI_START_MARKER)}[ \t]*$", markdown)
+    )
+    ends = list(re.finditer(rf"(?m)^{re.escape(AI_END_MARKER)}[ \t]*$", markdown))
+    if len(starts) != 1 or len(ends) != 1 or ends[0].start() < starts[0].end():
+        return None
+    headings = list(
+        re.finditer(
+            rf"(?m)^{re.escape(AI_HEADING)}[ \t]*$",
+            markdown[: starts[0].start()],
+        )
+    )
+    if not headings:
+        return None
+    heading = headings[-1]
+    start = starts[0]
+    end = ends[0]
+    return heading.start(), start.end(), end.start(), end.end()
+
+
 def parse_ai_section(markdown: str) -> str | None:
-    match = re.search(r"(?m)^## AI 整理\s*$", markdown)
-    return markdown[match.start() :].strip() if match else None
+    offsets = _ai_section_offsets(markdown)
+    if offsets is None:
+        return None
+    section_start, _, _, section_end = offsets
+    return markdown[section_start:section_end].strip()
 
 
 def normalize_topics(value: Any) -> list[str]:
@@ -127,11 +156,44 @@ class RecordStore:
         idempotency checks are calculated.
         """
 
+        existing = self.read(group)
+        if existing is None:
+            return []
+        source_files = self._record_source_files(existing)
+        external_names = {path.name for path in group.transcript}
         return [
             self.generated_transcript_path(group, index)
             for index in range(1, len(group.audio) + 1)
             if self.generated_transcript_path(group, index).is_file()
+            and self.generated_transcript_path(group, index).name in source_files
+            and self.generated_transcript_path(group, index).name not in external_names
         ]
+
+    @staticmethod
+    def _record_source_files(markdown: str) -> set[str]:
+        """Read the source file names recorded in canonical frontmatter."""
+
+        if not markdown.startswith("---\n"):
+            return set()
+        end = markdown.find("\n---\n", 4)
+        if end < 0:
+            return set()
+        names: set[str] = set()
+        in_sources = False
+        for line in markdown[4:end].splitlines():
+            if line == "source_files:":
+                in_sources = True
+                continue
+            if in_sources and line.startswith("  - "):
+                value = line[4:].strip()
+                try:
+                    names.add(str(json.loads(value)))
+                except json.JSONDecodeError:
+                    names.add(value.strip('"'))
+                continue
+            if in_sources:
+                break
+        return names
 
     def generated_transcript_path(self, group: RecordGroup, index: int) -> Path:
         """Return the bridge-owned transcript destination for one audio file."""
@@ -141,8 +203,6 @@ class RecordStore:
     def attach_generated_transcripts(self, group: RecordGroup) -> None:
         """Attach bridge-owned transcripts without mutating source folders."""
 
-        if group.transcript:
-            return
         for path in self.generated_transcript_paths(group):
             if path not in group.transcript:
                 group.transcript.append(path)
@@ -155,11 +215,11 @@ class RecordStore:
 
     def raw_content(self, group: RecordGroup) -> tuple[str, str]:
         raw_text = "\n\n".join(
-            path.read_text(encoding="utf-8").strip() for path in group.raw_text
-        ).strip()
+            path.read_text(encoding="utf-8") for path in group.raw_text
+        )
         transcript = "\n\n".join(
-            path.read_text(encoding="utf-8").strip() for path in group.transcript
-        ).strip()
+            path.read_text(encoding="utf-8") for path in group.transcript
+        )
         return raw_text, transcript
 
     @staticmethod
@@ -187,10 +247,23 @@ class RecordStore:
             destinations[path] = self._unique_name(
                 f"raw-text-{index:02d}{path.suffix.lower()}", used
             )
-        for index, path in enumerate(group.transcript, start=1):
+        generated = {
+            self.generated_transcript_path(group, index): index
+            for index in range(1, len(group.audio) + 1)
+        }
+        for path in sorted(
+            (path for path in group.transcript if path in generated),
+            key=lambda item: generated[item],
+        ):
+            destinations[path] = self._unique_name(path.name, used)
+        transcript_index = 1
+        for path in (path for path in group.transcript if path not in generated):
+            while f"transcript-{transcript_index:02d}{path.suffix.lower()}" in used:
+                transcript_index += 1
             destinations[path] = self._unique_name(
-                f"transcript-{index:02d}{path.suffix.lower()}", used
+                f"transcript-{transcript_index:02d}{path.suffix.lower()}", used
             )
+            transcript_index += 1
         for path in group.attachments:
             destinations[path] = self._unique_name(f"attachment-{path.name}", used)
         return destinations
@@ -203,7 +276,7 @@ class RecordStore:
         return destinations
 
     def _initial_ai_section(self, ai_status: str, ai_error: str | None) -> str:
-        section = ["## AI 整理", "", "<!-- aha-bridge:ai -->"]
+        section = [AI_HEADING, "", AI_START_MARKER]
         if ai_status == "skipped":
             section.append("狀態：只收錄（未啟用 AI 整理）")
         elif ai_status == "completed":
@@ -212,7 +285,7 @@ class RecordStore:
             section.append(f"狀態：處理失敗（{ai_error or 'unknown'}）")
         else:
             section.append("狀態：等待逐字稿或 AI 整理")
-        section.append("<!-- /aha-bridge:ai -->")
+        section.append(AI_END_MARKER)
         return "\n".join(section)
 
     def render_raw(
@@ -312,16 +385,14 @@ class RecordStore:
     def update_organization(self, record_path: Path, result: Organization | Any) -> None:
         organization = parse_organization(result)
         existing = Path(record_path).read_text(encoding="utf-8")
-        marker = re.search(r"(?m)^## AI 整理\s*$", existing)
-        prefix = existing[: marker.start()].rstrip() if marker else existing.rstrip()
+        offsets = _ai_section_offsets(existing)
+        if offsets is None:
+            raise ValueError("record does not contain exactly one marked AI section")
+        _, content_start, content_end, _ = offsets
         topics = normalize_topics(organization.topic)
-        section = "\n".join(
+        content = "\n".join(
             [
-                "## AI 整理",
-                "",
-                "<!-- aha-bridge:ai -->",
                 "狀態：已完成",
-                "<!-- /aha-bridge:ai -->",
                 "",
                 "### 分類",
                 "",
@@ -340,4 +411,9 @@ class RecordStore:
                 organization.summary,
             ]
         )
-        _atomic_write(Path(record_path), prefix + "\n\n" + section + "\n")
+        prefix = existing[:content_start].rstrip()
+        suffix = existing[content_end:].lstrip("\n")
+        updated = prefix + "\n" + content + "\n" + suffix
+        if not suffix.endswith("\n"):
+            updated += "\n"
+        _atomic_write(Path(record_path), updated)
