@@ -1,60 +1,15 @@
-name: CI
-
+name: ci
 on:
-  push:
   pull_request:
-
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  pull-requests: read # gitleaks in the shared CI lists the PR commits
 jobs:
-  test:
-    name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Package install smoke
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --no-deps .
-          aha-moment-recorder --help
-          python -m aha_moment_recorder --help
-
-      - name: CLI init doctor run smoke
-        run: |
-          fixture_dir=$(mktemp -d)
-          mkdir -p "$fixture_dir/inbox"
-          printf '%s\n' 'CI capture-only fixture' > "$fixture_dir/inbox/fixture.md"
-          aha-moment-recorder init \
-            --config "$fixture_dir/settings.toml" \
-            --vault "$fixture_dir/vault" \
-            --source "$fixture_dir/inbox" \
-            --mode capture-only
-          aha-moment-recorder doctor --config "$fixture_dir/settings.toml"
-          aha-moment-recorder run --config "$fixture_dir/settings.toml" --no-git-commit
-
-      - name: Unit and contract tests
-        run: python -m unittest discover -s tests -v
-
-      - name: Compile check
-        run: python -m py_compile aha_moment_recorder/*.py tests/*.py
-
-      - name: Diff hygiene
-        run: git diff --check HEAD^ HEAD
-
-      - name: Evidence summary
-        run: |
-          echo "VERDICT=verified: deterministic package, test, compile, and diff checks passed"
-          echo "LIVE_SMOKE=bounded caveat: not run; CI uses the fake transport and no private endpoint"
-          echo "HUMAN_OR_SECOND_DEVICE=unknown: outside this deterministic CI scope"
+  ci:
+    uses: GongYuanCaiJi/.github/.github/workflows/ci.yml@main
