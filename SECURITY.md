@@ -9,4 +9,4 @@
 - LaunchAgent plist 只保存命令、路徑與固定 stdout/stderr 路徑，不保存認證值。
 - `.gitignore` 會保護常見 local config、credential、runtime state、log 與 `records/`；提交前仍請檢查 `git diff --cached`。
 
-若發現可能造成秘密外洩、任意檔案寫入或不安全 LaunchAgent 操作的問題，請使用 GitHub repository 的 private vulnerability reporting / Security Advisory。維護者在把 repository 設為 public 前，必須先啟用並 live-verify 這個私下回報管道；在功能尚未啟用時，repository 應維持 private，不要在公開 issue 或 pull request 揭露細節。
+若發現可能造成秘密外洩、任意檔案寫入或不安全 LaunchAgent 操作的問題，請使用 GitHub repository 的 [private vulnerability reporting / Security Advisory](https://github.com/GongYuanCaiJi/aha-moment-recorder/security/advisories/new)。目前該管道、secret scanning 與 push protection 已啟用並完成 live verification；不要在公開 issue 或 pull request 揭露細節。

@@ -23,7 +23,7 @@
 
 目前 repo 提供的是可攜的記錄管線：macOS LaunchAgent 只是可選的背景執行 adapter。核心 package 不綁定特定筆記 App，也不綁定特定模型供應商；只要是 OpenAI-compatible 的文字 endpoint，就能接上背景整理。
 
-目前是 private pre-release repository。核心 CLI、測試、CI、安裝與安全邊界已整理成可公開的狀態；已知未包含的功能與正式公開前檢查見 [開源準備狀態](docs/open-source-readiness.md)。
+目前 repository 已公開，但仍是 pre-release；核心 CLI、測試、CI、安裝與安全邊界已整理完成。版本與後續維護狀態見 [開源準備狀態](docs/open-source-readiness.md)。
 
 ## 需要什麼
 
